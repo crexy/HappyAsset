@@ -1,7 +1,6 @@
 import re
 
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
-from flask_wtf import csrf
 from pymongo import MongoClient
 from user_account import UserAccount
 from flask_wtf.csrf import CSRFProtect

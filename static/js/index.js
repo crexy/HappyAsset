@@ -44,7 +44,9 @@ function num3Comma(x) {
 
 // 종목정보 출력
 var printStockValueInfo = function(data){
-    alert('Ok');
+    
+    var $tbody = $('#stock_value_grid tbody');
+    $tbody.empty();    
     // 데이터 구조
     // [{stock_name, stock_code, price, srim80, srim90, srim100}, {...},,]
     $.each(data, function(index, item){
@@ -65,9 +67,7 @@ var printStockValueInfo = function(data){
         // S-RIM 90
         var $td_srim90=$("<td>", {text:num3Comma(item.srim90)});
         // S-RIM 100
-        var $td_srim100=$("<td>", {text:num3Comma(item.srim100)});                                
-
-        var $tbody = $('#stock_value_grid tbody');
+        var $td_srim100=$("<td>", {text:num3Comma(item.srim100)});                                        
         
         $tr.append($td_no);
         $tr.append($td_no);
@@ -77,8 +77,17 @@ var printStockValueInfo = function(data){
         $tr.append($td_srim90);
         $tr.append($td_srim100);
         $tbody.append($tr)
-    })
-    
+    })    
+}
+
+// 종목S-RIM정보 찾기
+function searchStockSRimInfo(){
+    var data={
+        keyword:$('#search_box').val(),
+        //param:Math.random()
+    };        
+
+    ajax("/stock_srim", 'POST', JSON.stringify(data), printStockValueInfo);
 }
 
 $(function(){
@@ -93,16 +102,16 @@ $(function(){
         }
     });
 
+    // ====================== UI Event ====================== 
+    // 찾기 버튼 이벤트    
     $('#btn_search').on('click', function(e){
         e.preventDefault();
+        searchStockSRimInfo();        
+    });
 
-        var data={
-            keyword:$('#search_box').val(),
-            //param:Math.random()
-        };        
-
-        //ajax("/stock_srim", 'GET', 'json', 'application/json', JSON.stringify(data), printStockValueInfo);
-        ajax("/stock_srim", 'POST', JSON.stringify(data), printStockValueInfo);
+    $('#search_box').on('keydown', function(e){
+        if(e.keyCode == 13)
+            searchStockSRimInfo();
     })
 });
 
