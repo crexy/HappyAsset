@@ -6,7 +6,7 @@ from pymongo import MongoClient
 from user_account import UserAccount
 from flask_wtf.csrf import CSRFProtect
 
-mongoClient = MongoClient('mongodb://{0}:{1}@localhost'.format("crexy", "lowstar9130!"))
+mongoClient = MongoClient('mongodb://{0}:{1}@192.168.219.107'.format("crexy", "lowstar9130!"))
 database = mongoClient.Stock_Investment
 
 
@@ -83,11 +83,13 @@ def stock_srim():
     app.logger.info(keyword)
 
     # S-RIM 값 조회 쿼리
-    CROP_CTL = database["STOCK_CROP_DATA_CTL"] #종목정보 컬렉션(테이블)
+    CROP_CLT = database["STOCK_CROP_DATA_CLT"] #종목정보 컬렉션(테이블)
 
     rgx = re.compile(f'.*{keyword}.*', re.IGNORECASE)  # compile the regex
-    rsltList = CROP_CTL.find({{'$or':[{'stock_code':rgx},{'stock_name':rgx}]},
-                   {'_id':0, 'stock_code':1, 'stock_name':1, 'cur_price':1, 'S-RIM.080':1, 'S-RIM.090':1, 'S-RIM.100':1,}})
+    #rsltList = CROP_CLT.find({{'$or':[{'stock_code':rgx},{'stock_name':rgx}]},
+    #               {'_id':0, 'stock_code':1, 'stock_name':1, 'cur_price':1, 'S-RIM.080':1, 'S-RIM.090':1, 'S-RIM.100':1,}})
+
+    rsltList = CROP_CLT.find({'$or':[{'stock_code':rgx},{'stock_name':rgx}]})
 
     srimList = []
     for doc in rsltList:
@@ -95,9 +97,15 @@ def stock_srim():
         dict['stock_code'] = doc['stock_code']
         dict['stock_name'] = doc['stock_name']
         dict['price'] = doc['cur_price']
-        dict['srim80'] = doc['S-RIM']['080']
-        dict['srim90'] = doc['S-RIM']['090']
-        dict['srim100'] = doc['S-RIM']['100']
+        if 'S-RIM' in doc:
+            dict['srim80'] = doc['S-RIM']['080']
+            dict['srim90'] = doc['S-RIM']['090']
+            dict['srim100'] = doc['S-RIM']['100']
+        else:
+            dict['srim80'] = 0
+            dict['srim90'] = 0
+            dict['srim100'] = 0
+
         srimList.append(dict)
 
     return jsonify(srimList)
