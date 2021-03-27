@@ -1,14 +1,10 @@
 import re
 
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
-from pymongo import MongoClient
+
 from user_account import UserAccount
 from flask_wtf.csrf import CSRFProtect
-
-mongoClient = MongoClient('mongodb://{0}:{1}@192.168.219.107'.format("crexy", "lowstar9130!"))
-database = mongoClient.Stock_Investment
-
-
+from StockInvestDB import stockDB
 
 
 class MyFlask(Flask):
@@ -57,7 +53,7 @@ def try_login():
     # 계정 검사
 
     # 사용자 계정 객체
-    user_account = UserAccount(database["USER_INFO"])
+    user_account = UserAccount(stockDB.database["USER_INFO"])
 
     try:
         account, loginOk = user_account.login_check(user_id, password)
@@ -82,7 +78,7 @@ def stock_srim():
     app.logger.info(keyword)
 
     # S-RIM 값 조회 쿼리
-    CROP_CLT = database["STOCK_CROP_DATA_CLT"] #종목정보 컬렉션(테이블)
+    CROP_CLT = stockDB.database["STOCK_CROP_DATA_CLT"] #종목정보 컬렉션(테이블)
 
     rgx = re.compile(f'.*{keyword}.*', re.IGNORECASE)  # compile the regex
     #rsltList = CROP_CLT.find({{'$or':[{'stock_code':rgx},{'stock_name':rgx}]},
