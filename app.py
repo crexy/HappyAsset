@@ -4,7 +4,7 @@ from flask import Flask, render_template, url_for, request, session, redirect, j
 
 from user_account import UserAccount
 from flask_wtf.csrf import CSRFProtect
-from StockInvestDB import stockDB
+from StockDB import stockDB
 
 
 class MyFlask(Flask):
