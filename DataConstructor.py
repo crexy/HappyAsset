@@ -56,6 +56,8 @@ class DatabaseConstructor:
     # KRX 정보시스템에서 오늘의 전정목 시세 정보 파일 다운로드
     def __downloadTodayStockPriceInfoFile(self, dateList=None):
         options = webdriver.ChromeOptions()
+        #options.add_argument('headless')
+        #options.add_argument('disable-gpu')
         options.add_argument('window-size=1920,1080')
         driver = webdriver.Chrome(executable_path='./resources/webdriver/chromedriver', options=options)
         driver.implicitly_wait(2)
@@ -964,12 +966,13 @@ class DatabaseConstructor:
             QUARTER_FR_DATA_CLT.bulk_write(listQuatQuery, ordered=False)
             print(f'{len(listQuatQuery)})개 데이터 구축')
 
+
 #================================ DatabaseConstructor =====================================
 
 dbConstruct = DatabaseConstructor()
 
 if __name__ == "__main__":
-    dbConstruct.updateTodayStockPriceInfo() #오늘 종목가격 업데이트
+    #dbConstruct.updateTodayStockPriceInfo() #오늘 종목가격 업데이트
     #dbConstruct.download_FnGuide_pages(1)  # 제무재표 페이지 다운로드
     #dbConstruct.download_FnGuide_pages(2)  # 제무비율 페이지 다운로드
     #dbConstruct.download_FnGuide_pages(3)  # snapshot 페이지 다운로드

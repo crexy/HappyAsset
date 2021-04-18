@@ -1,5 +1,3 @@
-import re
-
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
 
 from user_account import UserAccount
@@ -53,7 +51,7 @@ def try_login():
     # 계정 검사
 
     # 사용자 계정 객체
-    user_account = UserAccount(stockDB.database["USER_INFO"])
+    user_account = UserAccount(stockDB.FS_DB["USER_INFO"])
 
     try:
         account, loginOk = user_account.login_check(user_id, password)
@@ -77,33 +75,11 @@ def stock_srim():
     keyword = data["keyword"]
     app.logger.info(keyword)
 
-    # S-RIM 값 조회 쿼리
-    CROP_CLT = stockDB.database["STOCK_CROP_DATA_CLT"] #종목정보 컬렉션(테이블)
 
-    rgx = re.compile(f'.*{keyword}.*', re.IGNORECASE)  # compile the regex
-    #rsltList = CROP_CLT.find({{'$or':[{'stock_code':rgx},{'stock_name':rgx}]},
-    #               {'_id':0, 'stock_code':1, 'stock_name':1, 'cur_price':1, 'S-RIM.080':1, 'S-RIM.090':1, 'S-RIM.100':1,}})
-
-    rsltList = CROP_CLT.find({'$or':[{'stock_code':rgx},{'stock_name':rgx}]})
-
-    srimList = []
-    for doc in rsltList:
-        dict={}
-        dict['stock_code'] = doc['stock_code']
-        dict['stock_name'] = doc['stock_name']
-        dict['price'] = doc['cur_price']
-        if 'S-RIM' in doc:
-            dict['srim80'] = doc['S-RIM']['080']
-            dict['srim90'] = doc['S-RIM']['090']
-            dict['srim100'] = doc['S-RIM']['100']
-        else:
-            dict['srim80'] = 0
-            dict['srim90'] = 0
-            dict['srim100'] = 0
-
-        srimList.append(dict)
 
     return jsonify(srimList)
+
+
 
 if __name__ == "__main__":
     app.config['SECRET_KEY'] = 'rkdworbsmswkdbfmfwodcnlgksek'

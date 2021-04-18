@@ -8,10 +8,14 @@
 
 
     <link rel="stylesheet" href="(( url_for('static', filename='css/bootstrap.css') ))">
-	<script src="(( url_for('static', filename='js/common/jquery.js') ))"></script>
-    <script src="(( url_for('static', filename='js/common/bootstrap.js') ))"></script>
-    <script src="(( url_for('static', filename='js/common/vue.js') ))"></script>
-    <script src="(( url_for('static', filename='js/common/axios.js') ))"></script>
+    <link rel="stylesheet" href="(( url_for('static', filename='css/tui-grid.css') ))">
+	<script src="(( url_for('static', filename='js/import/jquery.js') ))"></script>
+    <script src="(( url_for('static', filename='js/import/bootstrap.js') ))"></script>
+    <script src="(( url_for('static', filename='js/import/tui-grid.js') ))"></script>
+    <script src="(( url_for('static', filename='js/common.js') ))"></script>
+    <script src="(( url_for('static', filename='js/index.js') ))"></script>
+    <!--<script src="(( url_for('static', filename='js/import/vue.js') ))"></script>
+    <script src="(( url_for('static', filename='js/import/axios.js') ))"></script>-->
 
 </head>
 
@@ -20,27 +24,13 @@
       <div class="row">
         <input type="text" id="search_box" class="form-control col-sm-6">
         <button class="btn-primary col-sm-2" id="btn_search">검색</button>
+        <input type="checkbox" />
       </div>
     </div>
     <div class="container">
-      <div class="row">
-        <table class="table" id="stock_value_grid">
-          <thead>
-            <tr>
-              <th>번호</th>
-              <th>종목명(코드)</th>
-              <th>현재가(S-RIM 80% 비율)</th>
-              <th>S-RIM 80%</th>
-              <th>S-RIM 90%</th>
-              <th>S-RIM 100%</th>              
-            </tr>            
-          </thead>
-          <tbody>
-          </tbody>
-        </table>
+      <div id="grid">
       </div>
     </div>
 
-    <script src="(( url_for('static', filename='js/index.js') ))"></script>
 </body>
 </html>

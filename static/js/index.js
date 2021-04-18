@@ -1,58 +1,17 @@
+let stockInfo_gird = null; // 종목 정보 그리드
 
-
-// Ajax 호출
-// var ajax = function(url, type, dataType, contentType, data, callbackFun){
-//     $.ajax({
-//         url:url,
-//         type:type,
-//         dataType:dataType,
-//         contentType:contentType,
-//         data:data,
-//         catche:false,
-//         success:callbackFun,
-//         error:function(request, status, error){
-//             alert(error);
-//             console.log(request);
-//             console.log(status);
-//             console.log(error);
-//         }
-//     })
-// }
-
-var ajax = function(url, type, data, callbackFun){
-    $.ajax({
-        url:url,
-        type:type,
-        data:data,
-        contentType: "application/json",
-        dataType: 'json',
-        catche:false,
-        success:callbackFun,
-        error:function(request, status, error){
-            alert(error);
-            console.log(request);
-            console.log(status);
-            console.log(error);
-        }
-    })
-}
-
-// 숫자 3자리 콤마
-function num3Comma(x) {
-    return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
 
 // 종목정보 출력
 var printStockValueInfo = function(data){
-    
+
     var $tbody = $('#stock_value_grid tbody');
-    $tbody.empty();    
+    $tbody.empty();
     // 데이터 구조
     // [{stock_name, stock_code, price, srim80, srim90, srim100}, {...},,]
     $.each(data, function(index, item){
         var $tr = $('<tr>',{});
         //var $tr = $('<tr></tr>');
-        
+
         // 번호
         var $td_no=$("<td>",{text:index+1});
         // 종목명(코드)
@@ -67,8 +26,8 @@ var printStockValueInfo = function(data){
         // S-RIM 90
         var $td_srim90=$("<td>", {text:num3Comma(item.srim90)});
         // S-RIM 100
-        var $td_srim100=$("<td>", {text:num3Comma(item.srim100)});                                        
-        
+        var $td_srim100=$("<td>", {text:num3Comma(item.srim100)});
+
         $tr.append($td_no);
         $tr.append($td_no);
         $tr.append($td_stockName);
@@ -77,29 +36,135 @@ var printStockValueInfo = function(data){
         $tr.append($td_srim90);
         $tr.append($td_srim100);
         $tbody.append($tr)
-    })    
+    })
 }
 
 // 종목S-RIM정보 찾기
 function searchStockSRimInfo(){
+
+
     var data={
         keyword:$('#search_box').val(),
         //param:Math.random()
-    };        
+    };
 
-    ajax("/stock_srim", 'POST', JSON.stringify(data), printStockValueInfo);
+    stockInfo_gird.readData(1, data, true);
+
+    //ajax("/stock_srim", 'POST', JSON.stringify(data), printStockValueInfo);
+}
+
+// 그리드 생성
+function initGrid(){
+    let stockInfo_gird = new tui.Grid({
+      el: document.getElementById('grid'),
+      rowHeaders: ['rowNum'],
+      initialRequest: false, // set to true by default
+      data:{
+        readData: {
+            url: '/api/stock_srim',
+            method: 'GET',
+            contentType: 'application/json',
+        }
+      }
+      scrollX: true,
+      scrollY: true,
+      columns: [
+        {
+          header: '종목명',
+          name: 'stock_name',
+          width:200
+        },
+        {
+          header: '종목코드',
+          name: 'stock_code',
+          width:100
+        },
+        {
+          header: '현재가',
+          name: 'cur_price',
+          width:100
+        },
+        {
+          header: '전일가(등락률)',
+          name: 'last_price',
+          width:100
+        },
+        {
+          header: 'SRIM( 80% | 90% | 100% )',
+          name: 'srim',
+          width:300
+        },
+        {
+          header: 'SRIM 80% R',
+          name: 'srim80R',
+          width:100
+        },
+        {
+          header: '거래량',
+          name: 'volume',
+          width:150
+        },
+        {
+          header: '매출액',
+          name: 'sales',
+          width:100
+        },
+        {
+          header: '영업이익',
+          name: 'oerating_profit',
+          width:100
+        },
+        {
+          header: '순이익',
+          name: 'net_profit',
+          width:100
+        },
+        {
+          header: 'PER',
+          name: 'per'
+        },
+        {
+          header: 'ROE',
+          name: 'roe'
+        },
+        {
+          header: '시가총액',
+          name: 'market_cap',
+          width:100
+        }
+      ]
+    });
+}
+
+// grid DataSource 형식
+var tuigrid_datasource{
+  "result": true,
+  "data": {
+    "contents": [],
+    "pagination": {
+      "page": 1,
+      "totalCount": 100
+    }
+  }
 }
 
 $(function(){
-    var csrftoken = $('meta[name=csrf-token]').attr('content')
+    // CSRF 보안처리를 위한 AJAX 통신 Header 설정
+    INIT_CSRF_REQUEST_HEADER();
 
-    // Ajax 통신 전 CSRF 토큰 Request 해더에 설정!!!
-    $.ajaxSetup({
-        beforeSend: function(xhr, settings) {
-            if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
-                xhr.setRequestHeader("X-CSRFToken", csrftoken);
-            }
-        }
+    // 그리드 생성
+    initGrid();
+
+    stockInfo_gird.on('beforeRequest', function(data) {
+      // Before sending the request
+    }).on('response', function(data) {
+      // When a response has been received regardless of success.
+    }).on('successResponse', function(data) {
+      // When the result is set to true
+    }).on('failResponse', function(data) {
+      // When the result is set to false
+    }).on('errorResponse', function(data) {
+      // When an error occurs
     });
 
     // ====================== UI Event ====================== 

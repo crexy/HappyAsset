@@ -4,6 +4,9 @@ from operator import itemgetter
 import csv
 #from scipy import stats
 from StockDB import stockDB
+from scipy import stats
+import time
+import re
 
 # 한글 문자열 변수 선언
 CIS = "포괄손익계산서"
@@ -48,12 +51,12 @@ class DataAnalysis:
         list_totalAsset = QUARTER_FS_DATA_CLT.find({'year': year, 'quarter': quarter},
                                                    {'_id': 0, 'stock_code': 1, '재무상태표.지배기업주주지분': 1})
 
-        for x in list_totalAsset:
-            if PSHS not in x[BS]:
-                print(x['stock_code'])
+        # for x in list_totalAsset:
+        #     if PSHS not in x[BS]:
+        #         print(x['stock_code'])
 
         # 종목코드:지배주주지분 자산 map 생성
-        dicTotalAsset = {x['stock_code']: x[BS][PSHS] for x in list_totalAsset}
+        dicTotalAsset = {x['stock_code']: x[BS][PSHS] for x in list_totalAsset if PSHS in x[BS]}
 
         list_corp = STOCK_CROP_DATA_CLT.find({})
 
@@ -74,17 +77,43 @@ class DataAnalysis:
             if treasury_cnt == 'N/A': continue
             if 'cns_year' not in doc: continue
 
+            print(stock_code)
+
+            # dic_cns_year = doc['cns_year']
+            # if 'ROE' in dic_cns_year:
+            #     if dic_cns_year['ROE'] != 'N/A':
+            #         roe = dic_cns_year['ROE']
+            #     else: roe = 0
+            # else:
+            #     roe = 0 # 자본 잠식등으로 추정 ROE가 산출되지 못한 경우
+
             # 컨센서스 데이터가 존재하는 종목인 경우 년도 컨센서스의 ROE를 사용하고
             if SALES in doc['cns_year']:
                 dic_cns_year = doc['cns_year']
                 if 'ROE' in dic_cns_year:
                     if dic_cns_year['ROE'] != 'N/A':
                         roe = dic_cns_year['ROE']
+                    else: roe = 0 # ROE가 산출도지 못한 경우
+                else: roe = 0 # ROE가 산출도지 못한 경우
+
             else:  # 컨센서스 데이터가 존재하지 않는 종목은 분기 추정 ROE를 사용함
                 dic_cns_quarter = doc['cns_quarter']
                 if 'ROE' in dic_cns_quarter:
                     if dic_cns_quarter['ROE'] != 'N/A':
                         roe = dic_cns_quarter['ROE']
+                    else: roe = 0 # 자본 잠식등으로 추정 ROE가 산출되지 못한 경우
+                else: roe = 0 # 자본 잠식등으로 추정 ROE가 산출되지 못한 경우
+                
+                if roe <= 0: # 분기 추정 ROE가 정상 산출되지 못한 경우 년간 추정 ROE 값을 사용
+                    dic_cns_year = doc['cns_year']
+                    if 'ROE' in dic_cns_year:
+                        if dic_cns_year['ROE'] != 'N/A':
+                            roe = dic_cns_year['ROE']
+                        else:
+                            roe = 0  # ROE가 산출도지 못한 경우
+                    else:
+                        roe = 0  # ROE가 산출도지 못한 경우
+                    
 
             shareCnt = issued_cnt - treasury_cnt
             if stock_code in dicTotalAsset:
@@ -99,19 +128,23 @@ class DataAnalysis:
                 elif CSH in dic_cns_year:
                     bve = dic_cns_year[CSH]
 
-            if (bve != 'N/A' and roe != 'N/A'):
+            if (bve != 'N/A' and roe != 'N/A' and roe > 0):
                 stock_name = doc['stock_name']
                 # print(f'{rim_cnt}){stock_name}')
                 bve *= 100000000
                 val100 = self.__calc_S_RIM(bve, roe, discntR, 1, shareCnt)  # 적정가격
                 val090 = self.__calc_S_RIM(bve, roe, discntR, 0.9, shareCnt)  # 10% 할인가격
                 val080 = self.__calc_S_RIM(bve, roe, discntR, 0.8, shareCnt)  # 20% 할인가격
-
-                list_rim = [doc['stock_code'], val100, val090, val080]
-                list_bulk.append(list_rim)
-
+                
                 # print(f'{rim_cnt}){stock_name}: {list_rim}')
                 rim_cnt += 1
+            else:
+                val080 = 0
+                val090 = 0
+                val100 = 0
+
+            list_rim = [doc['stock_code'], val100, val090, val080]
+            list_bulk.append(list_rim)
 
         list_bulk_qry = []
         for item in list_bulk:
@@ -128,9 +161,173 @@ class DataAnalysis:
             STOCK_CROP_DATA_CLT.bulk_write(list_bulk_qry, ordered=False)
             print(f'{len(list_bulk_qry)})개 S-RIM 데이터 업데이트')
 
+    # 매출액 정보 얻기
+    def __genSalesInfo(self, crsStockInfo, fsCLT, bYear):
+
+        for stockInfo in crsStockInfo:
+            stock_code = stockInfo["stock_code"]
+
+            if bYear == False:
+                crsFsInfo = fsCLT.find({"stock_code": stock_code}).sort([
+                    ('year', 1),
+                    ('quarter', 1)
+                ])
+            else:
+                crsFsInfo = fsCLT.find({"stock_code": stock_code}).sort('year', 1)
+
+            listSaleInfo = []  # 매출액 정보(기간 정보 포함)
+            listSaleVal = []  # 매출액 선형회귀를 위한 매출액 정보
+            for fsInfo in crsFsInfo:
+                dic_sales = dict()  # 매출액 정보 dict
+                if "매출액" in fsInfo["포괄손익계산서"]:
+                    dic_sales["sales"] = fsInfo["포괄손익계산서"]["매출액"]
+                elif "순이자손익" in fsInfo["포괄손익계산서"]:  # 금융계열 종목
+                    dic_sales["sales"] = fsInfo["포괄손익계산서"]["순이자손익"]
+                elif "영업수익" in fsInfo["포괄손익계산서"]:  # 금융계열 종목
+                    dic_sales["sales"] = fsInfo["포괄손익계산서"]["영업수익"]
+                else:
+                    dic_sales["sales"] = 0
+
+                dic_sales["year"] = fsInfo["year"]
+                if bYear == False: dic_sales["quarter"] = fsInfo["quarter"]
+                listSaleInfo.append(dic_sales)
+                listSaleVal.append(dic_sales["sales"])
+
+            if len(listSaleInfo) == 0: continue
+
+            slope, intercept, r_value, p_value, stderr = stats.linregress(range(len(listSaleVal)), listSaleVal)
+            dic_sales_linregress = {
+                'slope': slope/intercept,
+                'intercept': intercept,
+                'r_value': r_value,
+                'p_value': p_value,
+                'stderr': stderr/intercept
+            }
+            '''
+            slope
+            회귀선의 기울기입니다.
+            intercept
+            회귀선의 절편입니다.
+            rvalue
+            상관 계수.
+            pvalue
+            귀무 가설이 있는 가설 검정의 양측 p-값 기울기가 0인지 여부, t-분포와 함께 Wald Test를 사용합니다. 검정 통계량
+            stderr
+            추정된 그라데이션의 표준 오차입니다.        
+            '''
+
+            div_key =  'year_sales' if bYear else 'quarter_sales' # 분기와 년도 데이터의 키값 지정
+            # salesInfo > year/quarter > sale, linRegress 구조로 정보 업데이트
+            dic_data={'sales': listSaleInfo, 'linRegress': dic_sales_linregress}
+            yield UpdateOne({'stock_code': stock_code},
+                            {'$set': {div_key: dic_data}})
+
+    # 종목의 매출액 정보 업데이트
+    def updateStockSalesInfo(self):
+
+        STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]  # 종목정보 컬렉션
+        QUARTER_FS_DATA_CLT = stockDB.FS_DB["QUARTER_FS_DATA_CLT"]  # 분기 제무재표 정보 컬렉션
+        YEAR_FS_DATA_CLT = stockDB.FS_DB["YEAR_FS_DATA_CLT"]        # 년간 제무재표 정보 컬렉션
+
+        # 종목의 분기, 년간 제무제표 중 매출액 정보를 얻어 종복정보에 업데이트 해준다.
+
+        crsStockInfo = STOCK_CROP_DATA_CLT.find({})
+        # 분기 제무제표 데이터의 매출액 정보 업데이트 벌크 쿼리 받기
+        geneQuarterQryList = self.__genSalesInfo(crsStockInfo, QUARTER_FS_DATA_CLT, False)
+
+        crsStockInfo = STOCK_CROP_DATA_CLT.find({})
+        geneYearQryList = self.__genSalesInfo(crsStockInfo, YEAR_FS_DATA_CLT, True)
+
+        # 분기/년도 매출액 데이터 벌크 업데이트 수행
+        STOCK_CROP_DATA_CLT.bulk_write(list(geneQuarterQryList), ordered=False)
+
+        STOCK_CROP_DATA_CLT.bulk_write(list(geneYearQryList), ordered=False)
+
+        #db.getCollection('STOCK_CROP_DATA_CLT').updateMany({}, { $unset: {salesInfo: 1}});
+
+
+    def getSaleGrowthStock(self):
+        STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]  # 종목정보 컬렉션
+
+        curs = STOCK_CROP_DATA_CLT.find({}).sort('year_sales.linRegress.slope', -1)
+
+        no = 0
+        for i, stock in enumerate(curs):
+            slope = stock["year_sales"]["linRegress"]["slope"]
+            stderr = stock["year_sales"]["linRegress"]["stderr"]
+            if stderr > 0.5: continue
+            print(f"{stock['stock_name']}({stock['stock_code']}): {slope}")
+            no += 1
+            if no > 10 : break
+
+
+    #종목정보 리스트 얻기(SRIM 중심)
+    def getStockInfoList_SRIM(self, keyword):
+        # S-RIM 값 조회 쿼리
+        CROP_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]  # 종목정보 컬렉션(테이블)
+        rsltList = list()
+        if len(keyword) > 2:  # 검색어가 있을 경우
+            rgx = re.compile(f'.*{keyword}.*', re.IGNORECASE)  # compile the regex
+            # rsltList = CROP_CLT.find({{'$or':[{'stock_code':rgx},{'stock_name':rgx}]},
+            #               {'_id':0, 'stock_code':1, 'stock_name':1, 'cur_price':1, 'S-RIM.080':1, 'S-RIM.090':1, 'S-RIM.100':1,}})
+            rsltList = CROP_CLT.find({'$or': [{'stock_code': rgx}, {'stock_name': rgx}]})
+        else:
+            rsltList = CROP_CLT.find({})
+
+        srimList = []
+
+        for doc in rsltList:
+
+            tradeInfo = {
+                "종가": 0,
+                "전일가": 0,
+                "거래량": 0,
+                "전일거래량": 0,
+                "시가총액": 0
+            }
+
+            # 현재 종목의 일일거래정보 컬렉션이 있다면
+            if ("A" + doc['stock_code']) not in stockDB.SP_DB.list_collection_names():
+                continue
+
+            dict = {}
+            dict['stock_code'] = doc['stock_code']
+            dict['stock_name'] = doc['stock_name']
+            dict['cur_price'] = doc['현재가']
+            dict['last_price'] = 0  # 전일가
+            dict['price_diff_R'] = 0  # 가격 전일비
+            if 'S-RIM' in doc:
+                dict['srim'] = f"{doc['S-RIM']['080']} | {doc['S-RIM']['090']} | {doc['S-RIM']['100']}"
+                dict['srim80R'] = doc['현재가'] / doc['S-RIM']['080'] * 100
+            else:
+                dict['srim'] = 0
+                dict['srim80R'] = 0
+            dict['cur_volumn'] = 0  # 거래량
+            dict['last_volumn'] = 0  # 전일 거래량
+            dict['volumn_diff_R'] = 0  # 거래량 전일비
+            dict['sales'] = 0  # 매출액
+            dict['operating_profit'] = 0  # 영업이익
+            dict['net_profit'] = 0  # 순이익
+            dict['per'] = 0  # PER
+            dict['roe'] = 0  # ROE
+            dict['market_cap'] = 0  # 시가총액
+
+            srimList.append(dict)
+
+
+
+
+
+
+
+
+
 #================================ DataAnalysis =====================================
 
 dataAnalysis = DataAnalysis()
 
 if __name__ == "__main__":
-    dataAnalysis.updateAll_S_RIM(2020, 4) #S-RIM 가격 정보 Update
+    #dataAnalysis.updateAll_S_RIM(2020, 4) #S-RIM 가격 정보 Update
+
+    #dataAnalysis.updateStockSalesInfo() # 종목 매출액(시계열) 정보 업데이트
+    dataAnalysis.getSaleGrowthStock()
