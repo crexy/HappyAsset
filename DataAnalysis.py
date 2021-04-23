@@ -8,6 +8,8 @@ from scipy import stats
 import time
 import re
 
+import pandas as pd
+
 # 한글 문자열 변수 선언
 CIS = "포괄손익계산서"
 BS = "재무상태표"
@@ -315,8 +317,127 @@ class DataAnalysis:
             srimList.append(dict)
 
 
+    # 종목필터링 컨셉
+    # 1. 20년 매출액, 영업이익 21년 컨센 매출액, 영업이익 증가율 계산 => 매출액 증가률 top 30, 영업이익 증가율 top30
 
+    # 컨센서스 성장 증가율 TOP 30 종목
+    def concensusTop30SalesGrowthRateStocks(self, year, saveFilepath):
+        STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]  # 종목정보 컬렉션
+        YEAR_FS_DATA_CLT = stockDB.FS_DB["YEAR_FS_DATA_CLT"]  # 년간 제무재표 정보 컬렉션
 
+        #컨센서스가 있는 종목만 대상으로 선정
+        corp_curs = STOCK_CROP_DATA_CLT.find({'cns_year.매출액': {'$exists': True}})
+
+        # corp_curs = STOCK_CROP_DATA_CLT.find({"$or":[{'cns_year.매출액': {'$exists': True}},\
+        #                                             {'cns_year.이자수익': {'$exists': True}},\
+        #                                             #{'cns_year.보험료수익': {'$exists': True}},\
+        #                                             {'cns_year.순영업수익': {'$exists': True}}]})
+        # 컨센서스 매출액 등 영업수익 항목명칭 조사
+        # firstItem = set()
+        # for i, corp in enumerate(listCorp):
+        #     print((i+1), corp["stock_name"])
+        #     keys = corp["cns_year"].keys()
+        #     firstItem.add(list(keys)[0])
+        # for item in firstItem:
+        #     print(item)
+
+        list_stock_codes = list()
+        dic_cns={} # 컨센서스가 존재하는 종목정보
+        for corp in corp_curs:
+            stock_code = corp["stock_code"]
+            list_stock_codes.append(stock_code)
+            dic_cns[stock_code] = corp
+
+        fs_curs = YEAR_FS_DATA_CLT.find({'year':year, 'stock_code':{'$in':list_stock_codes}})
+        dic_fs = {x['stock_code']:x for x in fs_curs} # 컨센서스가 존재하는 종목의 제무재표 정보
+
+        #listSalesName = ["매출액", "이자수익", "보험료수익", "순영업수익"]
+        listSalesName = ["매출액"]
+
+        # 컬럼 리스트
+        listColumns = ['매출액증가율', '영업이익증가율', '비고', '종목명', '현재가', '시가총액', 'PER', 'ROE', '매출액', '영업이익', '이자보상비율', 'S-RIM80', 'S-RIM90', 'S-RIM100', 'S-RIM80 R']
+        dfGrowth = pd.DataFrame(columns=listColumns)
+        dfGrowth.index.name = "종목코드"
+
+        for stock_code in dic_cns.keys():
+            cropData = dic_cns[stock_code]
+            cnsData = cropData['cns_year']  # 컨센서스 데이터
+
+            if stock_code not in dic_fs: continue
+            fsData = dic_fs[stock_code]['포괄손익계산서'] # 제무제표 데이터
+            for sname in listSalesName: # 매출명칭
+                if sname in cnsData:
+                    lastSales = fsData[sname]    #매출액 데이터
+                    if lastSales == 0: continue
+                    cnsSales = cnsData[sname]
+
+                    lastOperProfit = fsData['영업이익']  #영업이익 데이터
+                    cnsOperProfit = cnsData['영업이익']
+
+                    # 매출액증가율
+                    salesGrw = (cnsSales-lastSales)/lastSales*100
+
+                    # 영업이익 증가율
+                    operProfitGrw = (cnsOperProfit-lastOperProfit)/lastOperProfit*100
+
+                    # 비고
+                    remark = ""
+                    if lastOperProfit < 0 and cnsOperProfit > 0: remark = "흑전"
+                    elif lastOperProfit > 0 and cnsOperProfit > 0: remark = "흑지"
+                    elif lastOperProfit < 0 and cnsOperProfit < 0: remark = "적지"
+                    elif lastOperProfit > 0 and cnsOperProfit < 0: remark = "적전"
+
+                    if lastOperProfit < 0:
+                        operProfitGrw *= -1
+
+                    stock_name = cropData["stock_name"]  # 종목명
+                    cur_price = cropData['cur_price']  # 현재가
+                    issued_shares_num = cropData['issued_shares_num']  # 발행주식수
+                    market_capitalization = cur_price * issued_shares_num /100000000  # 시가총액
+                    PER = cropData["PER"]
+                    ROE = cropData["ROE"]
+                    sales = cropData["매출액"]
+                    operating_profit = cropData["영업이익"]
+                    ICR = cropData["이자보상비율"]  # Interest Coverage Ratio
+                    # S-RIM 가격
+                    SRIM80 = cropData["S-RIM"]["080"]
+                    SRIM90 = cropData["S-RIM"]["090"]
+                    SRIM100 = cropData["S-RIM"]["100"]
+                    SRIM80_R = 0  # S-RIM80 가격 대비 현가격 비율
+                    if SRIM80 != 0:
+                        SRIM80_R = cur_price / SRIM80 * 100
+
+                    # ['매출액증가율', '영업이익증가율', '비고', '종목명', '현재가', '시가총액', 'PER', 'ROE', '매출액', '영업이익', '이자보상비율', 'S-RIM80', 'S-RIM90', 'S-RIM100', 'S-RIM80 R']
+
+                    dfGrowth.loc[stock_code] = [salesGrw, operProfitGrw, remark, stock_name, cur_price, market_capitalization, PER, ROE, sales, operating_profit, ICR, SRIM80, SRIM90, SRIM100, SRIM80_R]
+
+        #print(dfGrowth.columns)
+        # 매출액증가율로 정렬
+        dfSalesSort = dfGrowth.sort_values(by=['매출액증가율'], axis=0, ascending=False)
+        # 영업이익증가율로 정렬
+        dfOperProfitSort = dfGrowth.sort_values(by=['영업이익증가율'], axis=0, ascending=False)
+
+        setSalesTop70 = set(dfSalesSort.index[:70])
+        setOprFtTop70 = set(dfOperProfitSort.index[:70])
+
+        setInter = setSalesTop70 & setOprFtTop70 # 매출액증가율 상위 30, 영업이익 증가율 상위 30 교집합
+
+        dfGrowthInter = pd.DataFrame(columns=listColumns)
+        for stock_code in setInter:
+            dfGrowthInter.loc[stock_code] = dfSalesSort.loc[stock_code]
+
+        listDelIdx1=[]
+        listDelIdx2=[]
+        for i in range(len(dfSalesSort.index)):
+            if i >= 30:
+                listDelIdx1.append(dfSalesSort.index[i])
+                listDelIdx2.append(dfOperProfitSort.index[i])
+        dfSales_IR_TOP30 = dfSalesSort.drop(listDelIdx1)    # 매출액 증가율 TOP30
+        dfOperProfit_IR_TOP30 = dfOperProfitSort.drop(listDelIdx2) # 영업이익 증가율 TOP30
+
+        dfGrowthInter.to_csv(saveFilepath+"\\CNS_매출액영업이익.csv", encoding="UTF-8")
+        dfSales_IR_TOP30.to_csv(saveFilepath+"\\CNS_매출액_TOP30.csv", encoding="UTF-8")
+        dfOperProfit_IR_TOP30.to_csv(saveFilepath+"\\CNS_영업이익_TOP30.csv", encoding="UTF-8")
 
 
 
@@ -327,7 +448,8 @@ class DataAnalysis:
 dataAnalysis = DataAnalysis()
 
 if __name__ == "__main__":
+    a = 0
     #dataAnalysis.updateAll_S_RIM(2020, 4) #S-RIM 가격 정보 Update
-
     #dataAnalysis.updateStockSalesInfo() # 종목 매출액(시계열) 정보 업데이트
-    dataAnalysis.getSaleGrowthStock()
+    #dataAnalysis.getSaleGrowthStock()
+    dataAnalysis.concensusTop30SalesGrowthRateStocks(2020, "C:\\STOCK_DATA")

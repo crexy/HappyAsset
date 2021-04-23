@@ -28,6 +28,10 @@ import time
 import re
 
 import pandas as pd
+import logging
+logging.basicConfig(
+    format='%(asctime)s [%(levelname)s] %(message)s - %(filename)s:%(lineno)d',
+    level=logging.DEBUG)
 
 
 # 데이터 베이스 구축 관련 기능
@@ -39,7 +43,7 @@ class DatabaseConstructor:
         self.__downloadTodayStockPriceInfoFile()
 
         # 다운로드 폴더에서 다운된 전종목 시세 파일 경로 확인
-        downloadPath = 'C:\\Users\\박혜미\\Downloads'
+        downloadPath = 'C:\\Users\\cerxy\\Downloads'
 
         files = [join(downloadPath, f) for f in listdir(downloadPath) if isfile(join(downloadPath, f)) and ".csv" in f]
 
@@ -245,7 +249,7 @@ class DatabaseConstructor:
         URL = ""  # 다운로드 대상 페이지 주소
 
         # 파일 다운로드 폴더 패스
-        #download_path = 'D:/STOCK/download/'
+        download_path = 'E:/STOCK/download/'
 
         now_date = dt.datetime.now().strftime("%Y-%m-%d")
 
@@ -268,8 +272,9 @@ class DatabaseConstructor:
             stock_code = stckInf['stock_code']
             stock_name = stckInf['stock_name']
             # 리츠 종목이나 스팩은 제외
-            if stock_name.endswith('리츠') or stock_name.find('스팩') > 0:
+            if self.checkCorporation(stock_name) == False:
                 continue
+
             fnm_prefix = ""  # 파일명 접두어
             if mode == 1:  # 제무재표 페이지
                 URL = f'http://comp.fnguide.com/SVO2/ASP/SVD_Finance.asp?pGB=1&gicode=A{stock_code}&cID=&MenuYn=Y&ReportGB=&NewMenuID=103&stkGb=701'
@@ -285,6 +290,8 @@ class DatabaseConstructor:
             self.__download_page(filename, URL, download_path)
             down_cnt += 1
             print(f'{down_cnt}) {stock_name}')
+            time.sleep(0.2)
+
         print(f'>>> 총({down_cnt})페이지 다운로드 완료 <<<')
 
     # 문자숫자 -> 숫자
@@ -390,16 +397,48 @@ class DatabaseConstructor:
             treasury_stock = 0
 
         # 배당 수익률
-        dividend_yield = soup.select('#corp_group2 > dl:nth-child(5) > dd')
-        if len(dividend_yield) > 0:
-            dividend_yield = dividend_yield[0].text.strip()
-            if dividend_yield == '-': dividend_yield = 0 # 배당수익률이 없는 경우('-')
-            elif dividend_yield[-1] == '%': # 문자열에 "%" 가 있다면 '%'를 제외
-                dividend_yield = float(dividend_yield[0:-1])
-        else:
-            dividend_yield = 0
+        # dividend_yield = soup.select('#corp_group2 > dl:nth-child(5) > dd')
+        # if len(dividend_yield) > 0:
+        #     dividend_yield = dividend_yield[0].text.strip()
+        #     if dividend_yield == '-': dividend_yield = 0 # 배당수익률이 없는 경우('-')
+        #     elif dividend_yield[-1] == '%': # 문자열에 "%" 가 있다면 '%'를 제외
+        #         dividend_yield = float(dividend_yield[0:-1])
+        # else:
+        #     dividend_yield = 0
 
-        return dic_year, dic_quarter, treasury_stock, dividend_yield
+        # 베타
+        beta = soup.select('#svdMainGrid1 > table > tbody > tr:nth-child(4) > td.cle.r')
+        if len(beta) > 0:
+            beta = beta[0].text.strip()
+            if beta == '-': beta = 0
+            beta = self.__str_to_num(beta.strip())
+        else:
+            beta = 0
+
+        # 유동주식수 / 유동비율
+        floatStocks=0
+        floatStocksR=0
+        floatingStockText = soup.select('#svdMainGrid1 > table > tbody > tr:nth-child(7) > td.cle.r')
+        if len(floatingStockText) > 0:
+            text = floatingStockText[0].text.strip()
+            if text.find('/') == -1:
+                floatStocks = 0
+                floatStocksR = 0
+            else:
+                floatStocks, floatStocksR = text.split('/')
+                floatStocks = self.__str_to_num(floatStocks.strip())
+                floatStocksR = self.__str_to_num(floatStocksR.strip())
+
+        # FnGuid 산업분류
+        fics = soup.select('#compBody > div.section.ul_corpinfo > div.corp_group1 > p > span.stxt.stxt2')
+        if len(fics) > 0:
+            text = fics[0].text.strip()
+            text = text.replace('FICS', '')
+            text = text.replace('&nbsp;','')
+            fics = text.strip()
+        else: fics="ERR"
+
+        return dic_year, dic_quarter, treasury_stock, beta, floatStocks, floatStocksR, fics
 
     # 컨센서스 데이터 DB구축
     def constructDB_consensus_data(self, data_dir_path):
@@ -414,9 +453,10 @@ class DatabaseConstructor:
         for stckInf in stock_info:
             stock_code = stckInf['stock_code'] # 종목코드
             stock_name = stckInf['stock_name'] # 종목명
-            # 리츠 종목이나 스팩은 제외
-            if stock_name.endswith('리츠') or stock_name.find('스팩') > 0:
+            # 리츠 종목이나 스팩, 우선주는 제외
+            if self.checkCorporation(stock_name) == False:
                 continue
+
             # 데이터(html) 파일 경로
             filepath = f'{data_dir_path}/CS_{stock_name}_{stock_code}.html' # 다운로드 파일 저장 파일명
 
@@ -424,10 +464,11 @@ class DatabaseConstructor:
 
             # 컨센서스 데이터 추출
             # treasury_stock: 자기주식, dividend_yield: 배당수익률
-            dic_year, dic_quarter, treasury_stock, dividend_yield = self.__crawling_fnGuide_consensus_basic_data(filepath)
+            # beta: 베타계수, floatStocks: 유동주식수, floatStocksR:유동비율, fics: FnGuid 산업분류
+            dic_year, dic_quarter, treasury_stock, beta, floatStocks, floatStocksR, fics = self.__crawling_fnGuide_consensus_basic_data(filepath)
             # 분기 컨센서스 정보가 없다면 종목정보가 없음을 의미
             if dic_quarter:
-                list_bulk.append([stckInf['stock_code'], dic_year, dic_quarter, treasury_stock, dividend_yield])
+                list_bulk.append([stckInf['stock_code'], dic_year, dic_quarter, treasury_stock, beta, floatStocks, floatStocksR, fics])
                 print(f'{no}){stock_name} 데이터')
                 no += 1
 
@@ -435,7 +476,9 @@ class DatabaseConstructor:
         for item in list_bulk:
             list_bulk_qry.append(
                 UpdateOne({'stock_code': item[0]}, {'$set':{'cns_year': item[1],
-                                'cns_quarter': item[2], 'treasury_stock': item[3], 'dividend_yield':item[4]}})
+                                'cns_quarter': item[2], 'treasury_stock': item[3],
+                                'beta':item[4], 'floatStocks':item[5],
+                                'floatStocksR':item[6], 'FICS':item[7]}})
             )
             if ( len(list_bulk_qry) == 1000 ):
                 STOCK_CROP_DATA_CLT.bulk_write(list_bulk_qry,ordered=False)
@@ -625,6 +668,17 @@ class DatabaseConstructor:
         # with open('fnGuid_sample.html', 'w', encoding="utf-8") as outfile:
         #    outfile.write(soup.prettify())
 
+
+    # 기업종목이 아닌 종목들 확인
+    def checkCorporation(self, stock_name):
+        if stock_name.endswith('리츠') or stock_name.find('스팩') > 0 or stock_name[-1] == "우" or\
+                stock_name.find('유안타제') >= 0 or stock_name.find('신한제') >= 0 or stock_name.find('대신밸런스제') >= 0 or\
+                stock_name.find('IBKS제') >= 0 or stock_name.find('케이비제') >= 0 or stock_name.endswith('우B') or\
+                stock_name.endswith('우(전환)') or stock_name.find('하나머스트') >= 0:
+            return False
+        return True
+
+
     # 재무제표 데이터 DB구축
     def constructDB_financialStatement_data(self, data_dir_path, year=0, quarter=0, mode='a', target_stock_code='all'):
         '''
@@ -642,7 +696,7 @@ class DatabaseConstructor:
         QUARTER_FS_DATA_CLT = stockDB.FS_DB["QUARTER_FS_DATA_CLT"]
         stock_info = STOCK_CROP_DATA_CLT.find({})  # 종목
 
-        list_bulk_year = [];
+        list_bulk_year = []
         list_bulk_quarter = []
 
         no = 1
@@ -655,7 +709,7 @@ class DatabaseConstructor:
 
             stock_name = stckInf['stock_name']
 
-            if stock_name.endswith('리츠') or stock_name.find('스팩') > 0:
+            if self.checkCorporation(stock_name) == False:
                 continue
 
             # 데이터(html) 파일 경로
@@ -920,7 +974,7 @@ class DatabaseConstructor:
         for i, stckInf in enumerate(stock_info):
             stock_code = stckInf['stock_code']
             stock_name = stckInf['stock_name']
-            if stock_name.endswith('리츠') or stock_name.find('스팩') > 0:
+            if self.checkCorporation(stock_name) == False:
                 continue
 
             # if i < 1402: continue
@@ -931,7 +985,7 @@ class DatabaseConstructor:
             if target_stock_code != 'all' and \
                     target_stock_code != stock_code: continue
 
-            if stock_name.endswith('리츠') or stock_name.find('스팩') > 0:
+            if self.checkCorporation(stock_name) == False:
                 continue
 
             # 년도, 분기 제무비율 정보 얻기
@@ -967,15 +1021,20 @@ class DatabaseConstructor:
             print(f'{len(listQuatQuery)})개 데이터 구축')
 
 
+
 #================================ DatabaseConstructor =====================================
 
 dbConstruct = DatabaseConstructor()
 
 if __name__ == "__main__":
+    a = 0
     #dbConstruct.updateTodayStockPriceInfo() #오늘 종목가격 업데이트
     #dbConstruct.download_FnGuide_pages(1)  # 제무재표 페이지 다운로드
     #dbConstruct.download_FnGuide_pages(2)  # 제무비율 페이지 다운로드
     #dbConstruct.download_FnGuide_pages(3)  # snapshot 페이지 다운로드
-    #dbConstruct.constructDB_financialStatement_data("D:/STOCK/download/FS/2021-04-03", 2020, 4) # 제무제표 데이터 구축
+    #dbConstruct.constructDB_financialStatement_data("E:/STOCK/download/FS/2021-04-03", 2020, 4) # 제무제표 데이터 구축
+    dbConstruct.constructDB_financialStatement_data("E:/STOCK/download/FS/2021-04-22")  # 제무제표 데이터 구축
     #dbConstruct.constructDB_financialRatio_data("D:/STOCK/download/FR/2021-04-03", 2020, 0, False, True, 'q') # 제무비율 데이터 구축
-    #dbConstruct.constructDB_consensus_data("D:/STOCK/download/CS/2021-04-03")  # 컨센서스 데이터 구축
+    dbConstruct.constructDB_financialRatio_data("E:/STOCK/download/FR/2021-04-22")  # 제무비율 데이터 구축
+    #dbConstruct.constructDB_consensus_data("E:/STOCK/download/CS/2021-04-22")  # 컨센서스 데이터 구축
+

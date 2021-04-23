@@ -64,7 +64,6 @@ def try_login():
     return redirect(url_for('index'))
 
 # 종목 S-RIM데이터 조회
-
 @app.route('/stock_srim', methods=['GET', 'POST'])
 def stock_srim():
     app.logger.info('stock_srim()')
@@ -74,9 +73,6 @@ def stock_srim():
     #data = request.args.get_json();
     keyword = data["keyword"]
     app.logger.info(keyword)
-
-
-
     return jsonify(srimList)
 
 
