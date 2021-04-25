@@ -7,11 +7,11 @@
     <title>Title</title>
 
 
-    <link rel="stylesheet" href="(( url_for('static', filename='css/bootstrap.css') ))">
-    <link rel="stylesheet" href="(( url_for('static', filename='css/tui-grid.css') ))">
-	<script src="(( url_for('static', filename='js/import/jquery.js') ))"></script>
-    <script src="(( url_for('static', filename='js/import/bootstrap.js') ))"></script>
-    <script src="(( url_for('static', filename='js/import/tui-grid.js') ))"></script>
+    <link rel="stylesheet" href="(( url_for('static', filename='lib/bootstrap/bootstrap.css') ))">
+    <link rel="stylesheet" href="(( url_for('static', filename='lib/tui/tui-grid.css') ))">
+	<script src="(( url_for('static', filename='lib/jquery/jquery.js') ))"></script>
+    <script src="(( url_for('static', filename='lib/bootstrap/bootstrap.js') ))"></script>
+    <script src="(( url_for('static', filename='lib/tui/tui-grid.js') ))"></script>
     <script src="(( url_for('static', filename='js/common.js') ))"></script>
     <script src="(( url_for('static', filename='js/index.js') ))"></script>
     <!--<script src="(( url_for('static', filename='js/import/vue.js') ))"></script>
@@ -21,15 +21,8 @@
 
 <body>
     <div class="container">
-      <div class="row">
-        <input type="text" id="search_box" class="form-control col-sm-6">
-        <button class="btn-primary col-sm-2" id="btn_search">검색</button>
-        <input type="checkbox" />
-      </div>
-    </div>
-    <div class="container">
-      <div id="grid">
-      </div>
+        <h2>Happy Asset Investment 주식 분석 시스템</h2><span>v0.1</span>
+        <a href="/stock_list">일반종목검색</a>
     </div>
 
 </body>

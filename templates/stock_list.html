@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+
+    <meta charset="UTF-8">
+    <!-- Flask-WTForms CSRF protection Token -->
+    <meta name="csrf-token" content="(( csrf_token() ))">
+    <title>Title</title>
+
+    <link rel="stylesheet" href="(( url_for('static', filename='lib/bootstrap/bootstrap.css') ))">
+    <link rel="stylesheet" href="(( url_for('static', filename='lib/tui/tui-pagination.css') ))">
+    <link rel="stylesheet" href="(( url_for('static', filename='lib/tui/tui-grid.css') ))">
+
+	<script src="(( url_for('static', filename='lib/jquery/jquery.js') ))"></script>
+    <script src="(( url_for('static', filename='lib/bootstrap/bootstrap.js') ))"></script>
+    <script src="(( url_for('static', filename='lib/tui/tui-pagination.js') ))"></script>
+    <script src="(( url_for('static', filename='lib/tui/tui-grid.js') ))"></script>
+
+    <script src="(( url_for('static', filename='js/common.js') ))"></script>
+    <script src="(( url_for('static', filename='js/stock_list.js') ))"></script>
+
+</head>
+<body>
+    <div class="container-xxl p-3 my-3 border">
+      <div class="row">
+        <input type="text" id="search_box" class="form-control col-sm-6">
+        <button class="btn-primary btn" id="btn_search">검색</button>
+      </div>
+
+    <div>
+      <div id="grid"></div>
+    </div>
+    <div class="text-right">
+      <button class="btn btn-secondary" disabled id="btn_cancel_stock_info">종목 정보 작성 취소</button>
+      <button class="btn btn-success" id="btn_write_stock_info">종목 정보 작성</button>
+    </div>
+    <div class="col-md-12 col-lg-12 center-block">
+        <h4 class="mb-3">종목 정보</h4>
+        <form class="needs-validation" novalidate="">
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label for="holdingCompany" class="form-label">지주사</label>
+              <input readonly type="text" class="form-control" id="holdingCompany" placeholder="" value="" required="">
+            </div>
+            <div class="col-sm-6">
+              <label for="customer" class="form-label">고객사</label>
+              <input readonly type="text" class="form-control" id="customer" placeholder="" value="" required="">
+            </div>
+
+            <div class="col-12">
+              <label for="product" class="form-label">제품/서비스</label>
+              <textarea readonly id="product" class="form-control" rows="2"></textarea>
+            </div>
+
+            <div class="col-12">
+              <label for="business" class="form-label">사업정보/재료</label>
+              <textarea readonly id="business" class="form-control" rows="3"></textarea>
+            </div>
+          </div>
+
+        </form>
+      </div>
+
+    </div>
+</body>
+</html>

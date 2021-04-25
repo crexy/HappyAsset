@@ -18,7 +18,15 @@ var ajax = function(url, type, data, callbackFun){
 
 // 숫자 3자리 콤마
 function num3Comma(x) {
+    if(!x) return x
     return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    // Number(changeValue ).toLocaleString()
+}
+
+// 소수점 2자리 표현
+function decimal2p(x){
+    if(!x) return x
+    return Math.round(x * 100) / 100
 }
 
 // CSRF 보안처리를 위한 AJAX 통신 Header 설정

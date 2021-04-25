@@ -263,60 +263,6 @@ class DataAnalysis:
             if no > 10 : break
 
 
-    #종목정보 리스트 얻기(SRIM 중심)
-    def getStockInfoList_SRIM(self, keyword):
-        # S-RIM 값 조회 쿼리
-        CROP_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]  # 종목정보 컬렉션(테이블)
-        rsltList = list()
-        if len(keyword) > 2:  # 검색어가 있을 경우
-            rgx = re.compile(f'.*{keyword}.*', re.IGNORECASE)  # compile the regex
-            # rsltList = CROP_CLT.find({{'$or':[{'stock_code':rgx},{'stock_name':rgx}]},
-            #               {'_id':0, 'stock_code':1, 'stock_name':1, 'cur_price':1, 'S-RIM.080':1, 'S-RIM.090':1, 'S-RIM.100':1,}})
-            rsltList = CROP_CLT.find({'$or': [{'stock_code': rgx}, {'stock_name': rgx}]})
-        else:
-            rsltList = CROP_CLT.find({})
-
-        srimList = []
-
-        for doc in rsltList:
-
-            tradeInfo = {
-                "종가": 0,
-                "전일가": 0,
-                "거래량": 0,
-                "전일거래량": 0,
-                "시가총액": 0
-            }
-
-            # 현재 종목의 일일거래정보 컬렉션이 있다면
-            if ("A" + doc['stock_code']) not in stockDB.SP_DB.list_collection_names():
-                continue
-
-            dict = {}
-            dict['stock_code'] = doc['stock_code']
-            dict['stock_name'] = doc['stock_name']
-            dict['cur_price'] = doc['현재가']
-            dict['last_price'] = 0  # 전일가
-            dict['price_diff_R'] = 0  # 가격 전일비
-            if 'S-RIM' in doc:
-                dict['srim'] = f"{doc['S-RIM']['080']} | {doc['S-RIM']['090']} | {doc['S-RIM']['100']}"
-                dict['srim80R'] = doc['현재가'] / doc['S-RIM']['080'] * 100
-            else:
-                dict['srim'] = 0
-                dict['srim80R'] = 0
-            dict['cur_volumn'] = 0  # 거래량
-            dict['last_volumn'] = 0  # 전일 거래량
-            dict['volumn_diff_R'] = 0  # 거래량 전일비
-            dict['sales'] = 0  # 매출액
-            dict['operating_profit'] = 0  # 영업이익
-            dict['net_profit'] = 0  # 순이익
-            dict['per'] = 0  # PER
-            dict['roe'] = 0  # ROE
-            dict['market_cap'] = 0  # 시가총액
-
-            srimList.append(dict)
-
-
     # 종목필터링 컨셉
     # 1. 20년 매출액, 영업이익 21년 컨센 매출액, 영업이익 증가율 계산 => 매출액 증가률 top 30, 영업이익 증가율 top30
 
