@@ -143,7 +143,7 @@ def stock_list_search():
         if "product_Keyword" in searchOpt:
             product_Keyword = searchOpt["product_Keyword"]
 
-    list, totCnt = haService.searchStockInfoList(page, perPage, stock_keyword, business_Keyword, customer_Keyword, product_Keyword)
+    list, totCnt = haService.searchStockInfoList(stock_keyword, business_Keyword, customer_Keyword, product_Keyword)
 
     return make_tui_ds_fmt(list, page, totCnt)
 
@@ -162,4 +162,4 @@ if __name__ == "__main__":
     app.config['SECRET_KEY'] = 'rkdworbsmswkdbfmfwodcnlgksek'
     csrf = CSRFProtect()
     csrf.init_app(app)
-    app.run(debug=True)
+    app.run(host='0.0.0.0', debug=True, port=5050)

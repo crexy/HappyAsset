@@ -17,6 +17,16 @@ function searchStockSRimInfo(){
     //ajax("/stock_srim", 'POST', JSON.stringify(data), printStockValueInfo);
 }
 
+// 종목 정보 전시
+function dispStockInfo(rowKey){
+    if(rowKey == -1) return;
+    row = stockInfo_gird.getRow(rowKey)
+    $('#holdingCompany').val(row.holdingCompany);
+    $('#customer').val(row.customer);
+    $('#product').val(row.product);
+    $('#business').val(row.business);
+}
+
 // 그리드 생성
 function initGrid(){
 
@@ -35,20 +45,33 @@ function initGrid(){
     }
 
     // S-RIM 컬럼 포멧터
-    function srimColumnFmt({ row, column, value }) {
-        var ratio = 0;
-        var color = "black";
-        if(value != 0){
-            ratio = row.cur_price/value*100
-            ratio = decimal2p(ratio)
-            color = "#00db3a";
-            if(ratio == 100)
-                color = "pink";
-            else if(ratio > 100)
-                color = "gray"
+    function srim_ColumnFmt({ row, column, value }) {
+        var color = "#00bf46";
+        var srim_pr_col = column.name+"_PR"
+        var srim_pr_val = row[srim_pr_col]
 
+        if(srim_pr_val != 0){
+            if(srim_pr_val == 100)
+                color = "pink";
+            else if(srim_pr_val > 100)
+                color = "gray"
             value = num3Comma(value)
-            var rsltFmt = "<p style='color:"+color+"'>"+value+"("+ratio+"%)</p>"
+            var rsltFmt = "<p style='text-align:right;color:"+color+"'>"+value+"</p>"
+            return rsltFmt;
+        }
+        return "-";
+    }
+
+    // S-RIM 가격대비 컬럼 포멧터
+    function srimPR_ColumnFmt({ row, column, value }) {
+        var color = "#00bf46";
+        if(value != 0){
+            if(value == 100)
+                color = "pink";
+            else if(value > 100)
+                color = "gray"
+            value = decimal2p(value)
+            var rsltFmt = "<p style='color:"+color+"'>("+value+"%)</p>"
             return rsltFmt;
         }
         return "-";
@@ -61,142 +84,329 @@ function initGrid(){
       data:dataSource,
       scrollX: true,
       scrollY: true,
-      bodyHeight:350,
+      bodyHeight:450,
+      rowHeight:40,
+      minRowHeight:20,
+      minColumnWidth:150,
       pageOptions: {
-        perPage: 10
+        useClient: true,
+        perPage: 20
       },
-      //pagination:true,
+      columnOptions: { // 고정 컬럼 설정
+        frozenCount: 3, // 3개의 컬럼을 고정하고
+        frozenBorderWidth: 2 // 고정 컬럼의 경계선 너비를 2px로 한다.
+      },
+
+      //pagination:false,
       columns: [
+        {
+          header: '시장구분',
+          name: 'market',
+          align: 'center',
+          width:100,
+          resizable: true,
+          filter: {
+            type: 'select',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
         {
           header: '종목명',
           name: 'stock_name',
-          width:200
+          align: 'center',
+          width:150,
+          resizable: true,
+          filter: {
+            type: 'text',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
         },
         {
           header: '종목코드',
           name: 'stock_code',
           align: 'center',
-          width:100
+          width:100,
+          resizable: true,
+          filter: {
+            type: 'text',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
         },
         {
-          header: '현재가(전일대비)',
+          header: '현재가',
           name: 'cur_price',
+          align: 'right',
+          width:100,
+          sortable: true,
+          resizable: true,
           align: 'center',
-          width:150,
           formatter: function({ row, column, value }) {
-
-            var ratio = (value - row.last_price)/row.last_price*100
-            ratio = decimal2p(ratio)
+            var df_rate = row.price_DR // 전일대비 등락률
             var color = "red";
-            if(ratio == 0)
+            if(df_rate == 0)
                 color = "black";
-            else if(ratio < 0)
+            else if(df_rate < 0)
                 color = "blue"
             value = num3Comma(value);
-            var rsltFmt = "<p style='color:"+color+"'>"+value+"("+ratio+"%)</p>"
+            var rsltFmt = "<p style='text-align:right;color:"+color+"'>"+value+"</p>"
             return rsltFmt;
           }
         },
         {
-          header: 'SRIM 80%(현가격 비율)',
-          name: 'srim80',
+          header: '(전일대비 %)',
+          name: 'price_DR',
           align: 'center',
           width:150,
-          formatter: srimColumnFmt
-        },
-        {
-          header: 'SRIM 90%(현가격 비율)',
-          name: 'srim90',
+          sortable: true,
+          resizable: true,
           align: 'center',
-          width:150,
-          formatter: srimColumnFmt
-        },
-
-        {
-          header: 'SRIM 100%(현가격 비율)',
-          name: 'srim100',
-          align: 'center',
-          width:150,
-          formatter: srimColumnFmt
-        },
-        {
-          header: '거래량(전일대비, 유동주식수대비비율)',
-          name: 'cur_volumn',
-          align: 'center',
-          width:230,
-          formatter:function({ row, column, value }) {
-
-            // 전일 대비 거래량
-            var last_ratio = (value - row.last_volumn)/row.last_volumn*100
-            last_ratio = decimal2p(last_ratio)
-            var float_ratio = value/row.floatStocks*100
-            float_ratio = decimal2p(float_ratio)
-
+          /*formatter: function({ row, column, value }) {
+            value = decimal2p(value)
             var color = "red";
-            if(last_ratio == 0)
+            if(value == 0)
                 color = "black";
-            else if(last_ratio < 0)
+            else if(value < 0)
+                color = "blue"
+            value = decimal2p(value);
+            var rsltFmt = "<p style='color:"+color+"'>("+value+"%)</p>"
+            return rsltFmt;
+          },*/
+          formatter:function({ row, column, value }){ return decimal2p(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
+        {
+          header: 'S-RIM 80%',
+          name: 'srim80',
+          align: 'right',
+          width:100,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: srim_ColumnFmt
+        },
+        {
+          header: '(가격대비 %)',
+          name: 'srim80_PR',
+          align: 'center',
+          width:150,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          //formatter: srimPR_ColumnFmt,
+          formatter:function({ row, column, value }){ return decimal2p(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
+        {
+          header: 'S-RIM 90%',
+          name: 'srim90',
+          align: 'right',
+          width:100,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: srim_ColumnFmt
+        },
+        {
+          header: '(가격대비 %)',
+          name: 'srim90_PR',
+          align: 'center',
+          width:150,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          //formatter: srimPR_ColumnFmt,
+          formatter:function({ row, column, value }){ return decimal2p(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
+        {
+          header: 'S-RIM 100%',
+          name: 'srim100',
+          align: 'right',
+          width:100,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: srim_ColumnFmt
+        },
+        {
+          header: '(가격대비 %)',
+          name: 'srim100_PR',
+          align: 'center',
+          width:150,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          //formatter: srimPR_ColumnFmt,
+          formatter:function({ row, column, value }){ return decimal2p(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
+        {
+          header: '거래량',
+          name: 'cur_volumn',
+          align: 'right',
+          width:100,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter:function({ row, column, value }) {
+            var volumn_dr = row.volumn_DR;
+            var color = "red";
+            if(volumn_dr == 0)
+                color = "black";
+            else if(volumn_dr < 0)
                 color = "blue"
             value = num3Comma(value)
-            var rsltFmt = "<p style='color:"+color+"'>"+value+"("+last_ratio+"%,"+float_ratio+"%)</p>"
+            var rsltFmt = "<p style='text-align:right;color:"+color+"'>"+value+"</p>"
             return rsltFmt;
           }
         },
         {
-          header: '매출액',
+          header: '(전일대비 %)',
+          name: 'volumn_DR',
+          align: 'center',
+          width:180,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+/*          formatter:function({ row, column, value }) {
+            var color = "red";
+            if(value == 0)
+                color = "black";
+            else if(value < 0)
+                color = "blue"
+            value = decimal2p(value)
+            var rsltFmt = "<p style='color:"+color+"'>("+value+"%)</p>"
+            return rsltFmt;
+          },*/
+          formatter:function({ row, column, value }){ return decimal2p(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
+        {
+          header: '전체대비 거래량(%)',
+          name: 'volumn_TR',
+          align: 'center',
+          width:150,
+          resizable: true,
+          sortable: true,
+          formatter:function({ row, column, value }){ return decimal2p(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
+        {
+          header: '매출액(억)',
           name: 'sales',
           align: 'center',
           width:100,
-          formatter:function({ row, column, value }){ return num3Comma(value); }
+          align: 'right',
+          resizable: true,
+          sortable: true,
+          //formatter:function({ row, column, value }){ return num3Comma(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
         },
         {
-          header: '영업이익',
+          header: '영업이익(억)',
           name: 'operating_profit',
           align: 'center',
-          width:100,
-          formatter:function({ row, column, value }){ return num3Comma(value); }
+          width:150,
+          align: 'right',
+          resizable: true,
+          sortable: true,
+          //formatter:function({ row, column, value }){ return num3Comma(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
         },
         {
-          header: '순이익',
+          header: '순이익(억)',
           name: 'net_profit',
           align: 'center',
-          width:100,
-          formatter:function({ row, column, value }){ return num3Comma(value); }
+          width:150,
+          align: 'right',
+          resizable: true,
+          sortable: true,
+          //formatter:function({ row, column, value }){ return num3Comma(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
         },
         {
-          header: 'PER',
-          name: 'ROE',
+          header: 'PER(%)',
+          name: 'PER',
           align: 'center',
-          formatter:function({ row, column, value }){ return decimal2p(value); }
+          width:150,
+          resizable: true,
+          sortable: true,
+          formatter:function({ row, column, value }){ return decimal2p(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
         },
         {
-          header: 'ROE',
+          header: 'ROE(%)',
           name: 'ROE',
           align: 'center',
-          formatter:function({ row, column, value }){ return decimal2p(value); }
+          width:150,
+          resizable: true,
+          sortable: true,
+          formatter:function({ row, column, value }){ return decimal2p(value); },
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
         },
         {
           header: '시가총액(억)',
           name: 'market_cap',
-          width:100,
+          width:150,
           align: 'right',
-          formatter:function({ row, column, value }){
-            value /= 100000000;
-            value = decimal2p(value);
-            return num3Comma(value);
-           }
+          resizable: true,
+          sortable: true,
+          //formatter:function({ row, column, value }){ return num3Comma(value);},
+          filter: {
+            type: 'number',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
         }
       ]
     });
-
-    function dispStockInfo(rowKey){
-        if(rowKey == -1) return;
-        row = stockInfo_gird.getRow(rowKey)
-        $('#holdingCompany').val(row.holdingCompany);
-        $('#customer').val(row.customer);
-        $('#product').val(row.product);
-        $('#business').val(row.business);
-    }
 
     // 그리드 셀 포커스 변경 이벤트
     stockInfo_gird.on('focusChange', function(e){
@@ -220,17 +430,22 @@ $(function(){
     // 그리드 생성
     initGrid();
 
-/*    stockInfo_gird.on('beforeRequest', function(data) {
-      // Before sending the request
-    }).on('response', function(data) {
-      // When a response has been received regardless of success.
-    }).on('successResponse', function(data) {
-      // When the result is set to true
-    }).on('failResponse', function(data) {
-      // When the result is set to false
-    }).on('errorResponse', function(data) {
-      // When an error occurs
+    stockInfo_gird.on('beforeRequest', function(ev) {
+      // 요청을 보내기 전
+    });
+    stockInfo_gird.on('response', function(ev) {
+      // 성공/실패와 관계 없이 응답을 받았을 경우
+      var a = 0;
+    });
+/*    stockInfo_gird.on('successResponse', function(ev) {
+      // 결과가 true인 경우
     });*/
+    stockInfo_gird.on('failResponse', function(ev) {
+      // 결과가 false인 경우
+    });
+    stockInfo_gird.on('errorResponse', function(ev) {
+      // 오류가 발생한 경우
+    });
 
     // ====================== UI Event ======================
     // 찾기 버튼 이벤트
@@ -266,7 +481,7 @@ $(function(){
 
         if(infModifyMode == false){ // 작성시작
             setInputComponentState(true); // 작성컨트롤 활성화
-            $('#btn_cancel_stock_info').prop("disabled", true); // 작성취소 버튼 활성화
+            $('#btn_cancel_stock_info').prop("disabled", false); // 작성취소 버튼 활성화
         }else{ // 작성완료
             setInputComponentState(false); // 작성컨트롤 비활성화
             $('#btn_cancel_stock_info').prop("disabled", true); // 작성취소 버튼 비활성화

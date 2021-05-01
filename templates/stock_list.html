@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <title>종목조회</title>
 
     <meta charset="UTF-8">
     <!-- Flask-WTForms CSRF protection Token -->
@@ -23,7 +23,7 @@
 
 </head>
 <body>
-    <div class="container-xxl p-3 my-3 border">
+    <div class="container-xl p-3 my-3 border">
       <div class="row">
         <input type="text" id="search_box" class="form-control col-sm-6">
         <button class="btn-primary btn" id="btn_search">검색</button>
@@ -40,11 +40,15 @@
         <h4 class="mb-3">종목 정보</h4>
         <form class="needs-validation" novalidate="">
           <div class="row g-3">
-            <div class="col-sm-6">
+            <div class="col-sm-2">
               <label for="holdingCompany" class="form-label">지주사</label>
               <input readonly type="text" class="form-control" id="holdingCompany" placeholder="" value="" required="">
             </div>
-            <div class="col-sm-6">
+            <div class="col-sm-5">
+              <label for="SubsidiaryCompany" class="form-label">종속/관계사</label>
+              <input readonly type="text" class="form-control" id="SubsidiaryCompany" placeholder="" value="" required="">
+            </div>
+            <div class="col-sm-5">
               <label for="customer" class="form-label">고객사</label>
               <input readonly type="text" class="form-control" id="customer" placeholder="" value="" required="">
             </div>

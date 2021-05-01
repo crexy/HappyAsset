@@ -5,10 +5,11 @@ import csv
 #from scipy import stats
 from StockDB import stockDB
 from scipy import stats
-import time
+import datetime
 import re
 
 import pandas as pd
+import numpy as np
 
 # 한글 문자열 변수 선언
 CIS = "포괄손익계산서"
@@ -385,6 +386,344 @@ class DataAnalysis:
         dfSales_IR_TOP30.to_csv(saveFilepath+"\\CNS_매출액_TOP30.csv", encoding="UTF-8")
         dfOperProfit_IR_TOP30.to_csv(saveFilepath+"\\CNS_영업이익_TOP30.csv", encoding="UTF-8")
 
+    # 유동주식 대비 거래량 순위 종목 기간 수익률 구하기
+    def getVolumnRateYield(self, _prevDays, _startDate, _endDate, _reslut_day_cnt, _trgVolPer, targetEarningR):
+
+        def getPriceDataFrame(cursCorp):
+            no = 1
+            for corp in cursCorp:
+
+                stock_code = corp["stock_code"]
+                stock_name = corp["stock_name"]
+                if "S-RIM" in corp:
+                    srim100 = corp["S-RIM"]["100"]
+                else:
+                    srim100 = 0
+
+                strStartDate = str(_startDate)
+                dt_start = datetime.datetime.strptime(strStartDate, "%Y%m%d")
+                dt_start = dt_start + datetime.timedelta(days=-_prevDays)
+                strStartDate = dt_start.strftime("%Y%m%d")
+                startDate = int(strStartDate)
+
+                filter ={"$and":
+                    [{"날짜":{"$gte":startDate}},
+                     {"날짜":{"$lte":_endDate}}]}
+
+                doc_count = stockDB.SP_DB["A" + stock_code].count_documents(filter)
+
+                if doc_count == 0: continue
+
+                cursPrice = stockDB.SP_DB["A"+stock_code].find(filter)
+
+                df = pd.DataFrame(list(cursPrice))
+
+                print(f"{no}){stock_name} 데이터 획득")
+                no+=1
+
+                yield {"stock_code":stock_code,
+                       "stock_name":stock_name,
+                       "srim100":srim100,
+                       "df":df}
+
+        STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]  # 종목정보 컬렉션
+
+        cursCorp = STOCK_CROP_DATA_CLT.find({})
+
+        gen_priceInf_df = getPriceDataFrame(cursCorp)
+
+        dfVolumn = pd.DataFrame()
+        dfNextPriceR = pd.DataFrame()
+
+        dicStockName = {}
+        dicSrim={}
+        for dic_priceInf_df in gen_priceInf_df:
+            stock_code = dic_priceInf_df["stock_code"]
+            stock_name = dic_priceInf_df["stock_name"]
+            srim100 =  dic_priceInf_df["srim100"]
+            dicStockName[stock_code] = stock_name
+            dicSrim[stock_code] = srim100
+            dfRaw = dic_priceInf_df["df"]
+
+            # 종목의 일별 거래량 비율을 구해서 DataFrame에 저장
+            ltVolumnR=[]
+            ltDate=[]
+            ltNextDayPriceR=[]
+
+            rowCnt = dfRaw.shape[0]
+            for i in range(rowCnt):
+                volumn = dfRaw["거래량"][i]                
+                ltVolumnR.append(volumn)
+                date = dfRaw["날짜"][i]
+                ltDate.append(date)
+                if i < rowCnt-1:
+                    nextDayPriceR = (dfRaw["종가"][i+1]-dfRaw["종가"][i])/dfRaw["종가"][i]*100
+                else:
+                    nextDayPriceR = 0
+                ltNextDayPriceR.append(nextDayPriceR)
+
+            seriesVolumn = pd.Series(ltVolumnR, index=ltDate)
+            dfVolumn[stock_code] = seriesVolumn
+
+            seriesDayPriceR = pd.Series(ltNextDayPriceR, index=ltDate)
+            dfNextPriceR[stock_code] = seriesDayPriceR
+
+        # 아래 형태의 데이터 프래임 => dfVolumnR
+        #      | 종목1 | 종목2 | 종목3 | ...
+        # 날짜1 | 11.3 | 22.3 | 22.5 |
+        # 날짜2 | 11.3 | 22.3 | 22.5 |
+        # 날짜3 | 11.3 | 22.3 | 22.5 |
+
+        ltPickStock=[]
+        ltStockCode = dfVolumn.columns
+        no = 1
+        for stock_code in ltStockCode:
+            seriesR = dfVolumn[stock_code]
+
+            idxDate = seriesR[seriesR.index >= _startDate].index
+            
+            for idate in idxDate:
+                #idate = int(idate)
+                prevSeries = seriesR[seriesR.index < idate]
+                if prevSeries.shape[0] > _reslut_day_cnt: # 이전 평균값을 지정한 기간 범위 안에서 계산하기 위해
+                    prevSeries = prevSeries.drop(prevSeries.index[0])
+                volumnMean = prevSeries.mean()
+
+                if volumnMean < 1000:  # 평균 거래량이 1000 밑 종목은 거랴정지 가능성이 있음
+                    break
+
+                volumn = seriesR[idate]
+
+                if volumn > volumnMean * _trgVolPer: # 거래량이 평균대비 X배 높은 종목를 찾는다.
+                    # if dicStockName[stock_code] == '세화피앤씨':
+                    #     a = 0
+                    if dfNextPriceR[stock_code][idate] < 2: break # 거래량이 터진 다음날 주가가 떨어지면 Skip
+                    dicPick={
+                        "stock_code":stock_code,
+                        "baseDate":int(idate),
+                        "volumnMean":volumnMean,
+                        "trgVolumn":volumn}
+                    ltPickStock.append(dicPick)
+
+                    print(f"{no}){dicStockName[stock_code]} PICK")
+                    no += 1
+                    break
+
+
+
+
+        dfResult = pd.DataFrame()
+
+        ltStockCode =[]
+        ltStockName=[]
+        ltBaseDate=[]
+        ltmaxEarningR=[]
+        ltDaysTerm=[]
+        ltTrgVolumR=[]
+        ltSRIMR=[]
+
+        fmt2f = lambda x: format(x, '.2f')
+
+        no = 1
+        for dicPick in ltPickStock:
+            stock_code = dicPick["stock_code"]
+            baseDate = dicPick["baseDate"]
+
+            cursPrice = stockDB.SP_DB["A" + stock_code].find({"날짜": {"$gte": int(baseDate)}}).limit(_reslut_day_cnt)
+            stock_name = dicStockName[stock_code]
+            basePrice = 0
+            market_cap = 0
+            ltEarningR =[]
+            ltDate=[]
+
+            skipStock = False
+
+            for i, priceInf in enumerate(cursPrice):
+                if basePrice == 0:
+                    basePrice = priceInf["종가"]
+                    highPrice = priceInf["고가"]
+                    startPrice = priceInf["시가"]
+                    tbDiffWidth = (basePrice - highPrice ) / highPrice * 100
+                    if startPrice > basePrice or tbDiffWidth <= -7:
+                        skipStock = True
+                        break
+                    market_cap = priceInf["시가총액"]
+                    continue
+
+                if i == 1:
+                    endPrice = priceInf["종가"]
+                    highPrice = priceInf["고가"]
+                    startPrice = priceInf["시가"]
+                    tbDiffWidth = (endPrice - highPrice ) / highPrice * 100
+                    if startPrice > endPrice and tbDiffWidth <= -5:
+                        skipStock = True
+                        break
+
+                if i == 2:
+                    endPrice = priceInf["종가"]
+                    if endPrice < basePrice:
+                        skipStock = True
+                        break
+
+                earningR = (priceInf['종가'] - basePrice)/basePrice*100
+                sdate = priceInf['날짜']
+                #print(f"{sdate}) {format(earningR,'.2f')}")
+                ltEarningR.append(earningR)
+                ltDate.append(sdate)
+
+            if skipStock : continue
+
+            seriesRslt = pd.Series(ltEarningR, index=ltDate)
+            pickDate = seriesRslt.idxmax()
+            maxEarningR = seriesRslt.max()
+
+            dt_s = datetime.datetime.strptime(str(baseDate), "%Y%m%d")
+            dt_p = datetime.datetime.strptime(str(pickDate), "%Y%m%d")
+
+            dayTerm = (dt_p-dt_s).days
+
+            #if maxEarningR < 50:continue
+
+            trigerVolumnR = dicPick["trgVolumn"] / dicPick["volumnMean"]
+
+            if trigerVolumnR == np.inf:
+                a = 0
+
+            print(f"★{no}) {stock_name} 기준일: {baseDate} 시가총액: {market_cap / 100000000}억")
+            no += 1
+            print(f"최대수익률:{fmt2f(maxEarningR)}({pickDate}), 경과일:{dayTerm}, 트리거 거래비율:{fmt2f(trigerVolumnR)}배")
+            print("====================================================")
+            print("")
+
+            ltStockCode.append(stock_code)
+            ltStockName.append(stock_name)
+            ltBaseDate.append(baseDate)
+            ltmaxEarningR.append(maxEarningR)
+            ltDaysTerm.append(dayTerm)
+            ltTrgVolumR.append(trigerVolumnR)
+
+            srim100 = dicSrim[stock_code]
+            if srim100 == 0:
+                srimR = np.nan
+            else:
+                srimR = basePrice/srim100*100
+            ltSRIMR.append(srimR)
+
+        if len(ltStockCode) == 0 :
+            print("=========== 해당 종목이 없음! =========== ")
+            return
+
+        dfResult["stock_code"] = ltStockCode
+        dfResult["stock_name"] = ltStockName
+        dfResult["baseDate"] = ltBaseDate
+        dfResult["maxEarningR"] = ltmaxEarningR
+        dfResult["dayTerm"] = ltDaysTerm
+        dfResult["trigerVolumnR"] = ltTrgVolumR
+        dfResult["srimR"] = ltSRIMR
+
+        underTargetEarningRCnt = dfResult["maxEarningR"][dfResult["maxEarningR"] < targetEarningR].shape[0]
+        totCnt = dfResult.shape[0]
+        overTargetEarningR = 100 - (underTargetEarningRCnt / totCnt * 100)
+
+        print("==============================================================")
+        print("전체 정보")
+        print("수익률 평균:"+fmt2f(dfResult["maxEarningR"].mean()))
+        print("수익률 Std:" + fmt2f(dfResult["maxEarningR"].std()))
+        print("트리거 거래량 배율 평균:" + fmt2f(dfResult["trigerVolumnR"].mean()))
+        print("트리거 거래량 배율 Std:" + fmt2f(dfResult["trigerVolumnR"].std()))
+        print("SRIM 평균 비율:" + fmt2f(dfResult["srimR"].mean(skipna=True)))
+        print("SRIM Std:" + fmt2f(dfResult["srimR"].std(skipna=True)))
+        print("==============================================================")
+        print("")
+        print(f"{targetEarningR}% 미만 수익비율: {fmt2f(100-overTargetEarningR)}")
+        dflessTargetEarningR = dfResult[dfResult["maxEarningR"] < targetEarningR]
+        print("수익률 평균:" + fmt2f(dflessTargetEarningR["maxEarningR"].mean()))
+        print("수익률 Std:" + fmt2f(dflessTargetEarningR["maxEarningR"].std()))
+        print("트리거 거래량 배율 평균:" + fmt2f(dflessTargetEarningR["trigerVolumnR"].mean()))
+        print("트리거 거래량 배율 표준편차" + fmt2f(dflessTargetEarningR["trigerVolumnR"].std()))
+        print("SRIM 평균 비율:" + fmt2f(dflessTargetEarningR["srimR"].mean(skipna=True)))
+        print("SRIM Std:" + fmt2f(dflessTargetEarningR["srimR"].std(skipna=True)))
+        print("==============================================================")
+        print("")
+        print(f"{targetEarningR}% 초과 수익비율: {fmt2f(overTargetEarningR)}")
+        dfoverTargetEarningR = dfResult[dfResult["maxEarningR"] > targetEarningR]
+        print("수익률 평균:" + fmt2f(dfoverTargetEarningR["maxEarningR"].mean()))
+        print("수익률 Std:" + fmt2f(dfoverTargetEarningR["maxEarningR"].std()))
+        print("트리거 거래량 배율 평균:"+ fmt2f(dfoverTargetEarningR["trigerVolumnR"].mean()))
+        print("트리거 거래량 배율 표준편차"+fmt2f(dfoverTargetEarningR["trigerVolumnR"].std()))
+        print("SRIM 평균 비율:" + fmt2f(dfoverTargetEarningR["srimR"].mean(skipna=True)))
+        print("SRIM Std:" + fmt2f(dfoverTargetEarningR["srimR"].std(skipna=True)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # vRowCnt = dfVolumnR.shape[0]
+        #
+        # for i in range(vRowCnt):
+        #     idxDate = dfVolumnR.index[i]
+        #     series = dfVolumnR.loc[idxDate].sort_values(ascending=False)
+        #
+        #     # 설정된 거래량 비율 구간: 퍼센테이지 ex) 20% ~ 30%
+        #     # 안의 종목을 구하기
+        #     series1 = series >= startP
+        #     series2 = series <= endP
+        #     series1 = series1 & series2
+        #     series1 = series[series1]
+        #
+        #     sum_earnings_r = 0
+        #     plusCnt = 0
+        #     for j in range(series1.size):
+        #         stock_code = series1.index[j]
+        #
+        #         cursPrice = stockDB.SP_DB["A" + stock_code].find({"날짜": {"$gte": int(idxDate)}}).limit(reslut_day_cnt)
+        #         ltPrice = []
+        #         for priceInf in cursPrice:
+        #             ltPrice.append(priceInf["종가"])
+        #
+        #         startPrice = ltPrice[0]
+        #         lastPrice = ltPrice[-1]
+        #
+        #         earnings_r = (lastPrice - startPrice) / startPrice * 100
+        #         print(idxDate, 1+j, docStockName[stock_code], earnings_r)
+        #
+        #         if earnings_r > 0:
+        #             plusCnt += 1
+        #
+        #         sum_earnings_r += earnings_r;
+        #     print("수익률 합: ", sum_earnings_r,"%")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -398,4 +737,14 @@ if __name__ == "__main__":
     #dataAnalysis.updateAll_S_RIM(2020, 4) #S-RIM 가격 정보 Update
     #dataAnalysis.updateStockSalesInfo() # 종목 매출액(시계열) 정보 업데이트
     #dataAnalysis.getSaleGrowthStock()
-    dataAnalysis.concensusTop30SalesGrowthRateStocks(2020, "C:\\STOCK_DATA")
+    #dataAnalysis.concensusTop30SalesGrowthRateStocks(2020, "C:\\STOCK_DATA")
+
+    # for i in range(200):
+    #     v_r = dataAnalysis.getVolumnRateYield(i, 20210102, 20210201, 20)
+    #     print(i+1,"rank : ",v_r, "%")
+
+
+    dataAnalysis.getVolumnRateYield(20, 20210101, 20210201, 60, 20, 100)
+    #dataAnalysis.getVolumnRateYield(20, 20201201, 20210101, 50, 20, 100)
+    #dataAnalysis.getVolumnRateYield(20, 20201101, 20201201, 60, 20, 100)
+
