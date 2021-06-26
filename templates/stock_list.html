@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="(( url_for('static', filename='lib/bootstrap/bootstrap.css') ))">
     <link rel="stylesheet" href="(( url_for('static', filename='lib/tui/tui-pagination.css') ))">
     <link rel="stylesheet" href="(( url_for('static', filename='lib/tui/tui-grid.css') ))">
+    <link rel="stylesheet" href="(( url_for('static', filename='css/common.css') ))">
 
 	<script src="(( url_for('static', filename='lib/jquery/jquery.js') ))"></script>
     <script src="(( url_for('static', filename='lib/bootstrap/bootstrap.js') ))"></script>
@@ -23,11 +24,21 @@
 
 </head>
 <body>
-    <div class="container-xl p-3 my-3 border">
+    <div id="nav"></div>
+    <div class="container-xxl p-3 my-3 border">
       <div class="row">
-        <input type="text" id="search_box" class="form-control col-sm-6">
-        <button class="btn-primary btn" id="btn_search">검색</button>
+        <input type="text" placeholder="종목명 or 종목코드" id="search_stock" class="form-control col-sm-2 ml-1">
+        <input type="text" placeholder="지주사" id="search_holdingCompany" class="form-control col-sm-2 ml-1">
+        <input type="text" placeholder="종속 or 관계사" id="search_subsidiaryCompany" class="form-control col-sm-2 ml-1">
+        <input type="text" placeholder="고객사" id="search_customer" class="form-control col-sm-2 ml-1">
       </div>
+      <div class="row">
+        <input type="text" placeholder="제품/서비스" id="search_product" class="form-control col-sm-5 ml-1">
+        <input type="text" placeholder="사업정보/재료" id="search_business" class="form-control col-sm-5 ml-1">
+        <button class="btn-primary btn ml-2" id="btn_search">검색</button>
+        <button class="btn-secondary btn ml-2" id="btn_search_cancel">취소</button>
+      </div>
+
 
     <div>
       <div id="grid"></div>
@@ -37,7 +48,7 @@
       <button class="btn btn-success" id="btn_write_stock_info">종목 정보 작성</button>
     </div>
     <div class="col-md-12 col-lg-12 center-block">
-        <h4 class="mb-3">종목 정보</h4>
+        <h4 class="mb-3" id="stock_title">종목 정보</h4>
         <form class="needs-validation" novalidate="">
           <div class="row g-3">
             <div class="col-sm-2">
@@ -45,8 +56,9 @@
               <input readonly type="text" class="form-control" id="holdingCompany" placeholder="" value="" required="">
             </div>
             <div class="col-sm-5">
-              <label for="SubsidiaryCompany" class="form-label">종속/관계사</label>
-              <input readonly type="text" class="form-control" id="SubsidiaryCompany" placeholder="" value="" required="">
+              <label for="subsidiaryCompany" class="form-label">종속/관계사</label>
+              <!--<input readonly type="text" class="form-control" id="subsidiaryCompany" placeholder="" value="" required="">-->
+              <textarea readonly id="subsidiaryCompany" class="form-control" rows="1"></textarea>
             </div>
             <div class="col-sm-5">
               <label for="customer" class="form-label">고객사</label>

@@ -1,9 +1,11 @@
 import csv
+from pprint import pprint
 from time import sleep
 import os
 from os.path import isfile, join
 from os import listdir
 
+import pymongo
 from bs4 import BeautifulSoup
 import requests
 
@@ -28,10 +30,13 @@ import time
 import re
 
 import pandas as pd
+import numpy as np
+
 import logging
+
 logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s - %(filename)s:%(lineno)d',
-    level=logging.DEBUG)
+    level=logging.INFO)
 
 
 # 데이터 베이스 구축 관련 기능
@@ -232,7 +237,7 @@ class DatabaseConstructor:
         return
     
     # FnGuid Page 다운로드
-    def download_FnGuide_pages(self, mode, download_path="D:/STOCK/download/"):
+    def download_FnGuide_pages(self, mode, download_path="E:/STOCK/download/"):
         print('####### FnGuid 페이지 다운로드 #######')
 
         # mode: 다운로드 페이지 종류
@@ -446,7 +451,11 @@ class DatabaseConstructor:
         print('####### 컨센서스 데이터 DB 구축 #######')
         # 종목 컬렉션
         STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]
+        CONSENSUS_DATA_CLT = stockDB.FS_DB["CONSENSUS_DATA_CLT"]
+
         stock_info = STOCK_CROP_DATA_CLT.find({}) # 종목
+
+        cnst_date = data_dir_path.split('/')[-1] #구축날짜, 데이터 저장 경로에서 얻기
 
         list_bulk=[]    # DB 벌크 처리를 위한 데이터 저장 리스트
         no = 1
@@ -468,7 +477,7 @@ class DatabaseConstructor:
             dic_year, dic_quarter, treasury_stock, beta, floatStocks, floatStocksR, fics = self.__crawling_fnGuide_consensus_basic_data(filepath)
             # 분기 컨센서스 정보가 없다면 종목정보가 없음을 의미
             if dic_quarter:
-                list_bulk.append([stckInf['stock_code'], dic_year, dic_quarter, treasury_stock, beta, floatStocks, floatStocksR, fics])
+                list_bulk.append([stckInf['stock_code'], dic_year, dic_quarter, treasury_stock, beta, floatStocks, floatStocksR, fics, stock_name])
                 print(f'{no}){stock_name} 데이터')
                 no += 1
 
@@ -488,6 +497,28 @@ class DatabaseConstructor:
         if (len(list_bulk_qry) > 0):
             STOCK_CROP_DATA_CLT.bulk_write(list_bulk_qry, ordered=False)
             print(f'{len(list_bulk_qry)})개 컨센서스 데이터 구축')
+
+        list_bulk_qry = []  # DB 벌크 처리를 위한  쿼리저장 리스트
+        for item in list_bulk:
+            if len(item[1].keys()) < 4: continue    # 컨센서스 데이터가 없다면 구측하지 않는다.
+            list_bulk_qry.append(
+                InsertOne({'stock_code': item[0],
+                           'stock_name': item[8],
+                           'date': cnst_date,
+                           'cns_year': item[1],
+                           'cns_quarter': item[2]})
+            )
+            if (len(list_bulk_qry) == 200):
+                CONSENSUS_DATA_CLT.bulk_write(list_bulk_qry, ordered=False)
+                print(f'{len(list_bulk_qry)})개 컨센서스 데이터 구축')
+                list_bulk_qry = []
+
+        if (len(list_bulk_qry) > 0):
+            CONSENSUS_DATA_CLT.bulk_write(list_bulk_qry, ordered=False)
+            print(f'{len(list_bulk_qry)})개 컨센서스 데이터 구축')
+
+        # 컬렉션 인덱스
+        CONSENSUS_DATA_CLT.create_index([("date", pymongo.DESCENDING), ("stock_code", pymongo.ASCENDING)], unique=True)
 
         '''
         ========= tagId =========  
@@ -928,11 +959,11 @@ class DatabaseConstructor:
                     year, mon = key.split('.')
 
                 if mode == 'y' and filterYQ != 0:  # 특정 연도 데이터만 추출 시
-                    if year != str(filterYQ):  # 현 데이터가 지정 연도데이터와 일치하지 않을 시 스킵
+                    if int(year) != filterYQ:  # 현 데이터가 지정 연도데이터와 일치하지 않을 시 스킵
                         continue
 
                 if mode == 'q' and filterYQ != 0:  # 특정 분기 데이터만 추출 시
-                    if mon != str(filterYQ * 3):  # 현 데이터가 지정 분기데이터와 일치하지 않을 시 스킵, (*추출 데이터가 월 임으로 분기에 3을 곱하여 비교)
+                    if int(mon) != filterYQ * 3:  # 현 데이터가 지정 분기데이터와 일치하지 않을 시 스킵, (*추출 데이터가 월 임으로 분기에 3을 곱하여 비교)
                         continue
 
                 dicFr['year'] = year
@@ -1020,6 +1051,414 @@ class DatabaseConstructor:
             QUARTER_FR_DATA_CLT.bulk_write(listQuatQuery, ordered=False)
             print(f'{len(listQuatQuery)})개 데이터 구축')
 
+    # 거래량 증가 비율 TOP 200 종목 중 SRIM 100 이하 종목 기록
+    def writeUnderSrim100InVolumeRTop200(self):
+        
+        STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]
+
+        ld_ratio100 = lambda x, y: x / y * 100
+        cursCorp = STOCK_CROP_DATA_CLT.find({})
+        
+        df = pd.DataFrame()
+
+        for docStock in cursCorp:  # 종목정보
+            idx = docStock['stock_code']
+            cur_price = docStock['cur_price']
+
+            dictRow = {}  # 데이터프레임의 ROW => 개별 종목 정보
+
+            dictRow['date'] = (docStock['date'])
+            dictRow['stock_code'] = idx
+            dictRow['stock_name'] = docStock['stock_name']
+            dictRow['market'] = docStock['market']
+            dictRow['cur_price'] = (cur_price)
+            dictRow['srim100'] = 0
+            dictRow['srim100_PR'] = 0
+
+            if 'S-RIM' in docStock:
+                dictRow['srim100'] = (docStock['S-RIM']['100'])
+                if dictRow['srim100'] != 0:
+                    dictRow['srim100_PR'] = ld_ratio100(cur_price, dictRow['srim100'])
+
+            if "floatStocks" in docStock: #유동주식 정보가 있다면
+                dictRow['floatStocks'] = (docStock["floatStocks"]) # 유동주식수
+            else:   # 유동주식 정보가 없다면 전체주식 대입
+                dictRow['floatStocks'] = np.int64(docStock["issued_shares_num"])  # 전체주식수
+
+            dictRow['volumn_TR'] = 0 #유동주식 대비 거래량 비율
+
+            dictRow['market_cap'] = round(cur_price*docStock["issued_shares_num"] / 100000000)  # 시가총액 억단위로 환산
+            dictRow['last_price'] = (docStock["전일종가"])  # 전일가
+            dictRow['cur_volumn'] = np.int64(docStock["거래량"])  # 거래량
+            dictRow['last_volumn'] = np.int64(docStock["전일거래량"])  # 전일 거래량
+    
+            if dictRow['floatStocks'] != 0:
+                dictRow['volumn_TR'] = ld_ratio100(dictRow['cur_volumn'], dictRow['floatStocks'])  # 유동주식 대비 거래량 비율
+                
+            df = df.append(dictRow, ignore_index=True) # 데이터 프레임에 ROW추가
+
+        #df.set_index('stock_code', inplace=True)
+        df.sort_values(by=['volumn_TR'], axis=0, ascending=False, inplace=True)
+
+        # df = df.astype({'cur_price':'int',
+        #            'cur_volumn':'int',
+        #            'date':'int',
+        #            'floatStocks':'int',
+        #            'last_price':'int',
+        #            'last_volumn':'int',
+        #            'srim100':'int',
+        #            'market_cap':'int'})
+
+        bulk_query=[]
+
+        for i, idx in enumerate(df.index):
+            if i >= 200: break # 거래비율 상위 200 종목내에서 S-RIM100 보다 저평가된 종목을 찾는다.
+            if df.loc[idx]['srim100_PR'] < 100 and df.loc[idx]['srim100_PR'] != 0:
+                # 데이터 입력
+                item = df.loc[idx].to_dict()
+                item['cur_price'] = int(item['cur_price'])
+                item['cur_volumn'] = int(item['cur_volumn'])
+                item['date'] = int(item['date'])
+                item['floatStocks'] = int(item['floatStocks'])
+                item['last_price'] = int(item['last_price'])
+                item['last_volumn'] = int(item['last_volumn'])
+                item['srim100'] = int(item['srim100'])
+                item['market_cap'] = int(item['market_cap'])
+
+                bulk_query.append(InsertOne(item))
+
+        stockDB.FS_DB["TOP_VOLUMN_RATIO_SRIM100"].bulk_write(bulk_query, ordered=False)
+        stockDB.FS_DB["TOP_VOLUMN_RATIO_SRIM100"].create_index([("date", pymongo.DESCENDING), ("stock_code", pymongo.ASCENDING)], unique=True)
+        print("TOP_VOLUMN_RATIO_SRIM100 완료!")
+        
+    # 거래량 평균대비 폭증 종목 확인
+    def writeVolumnJumpStocks(self,meanDays, volMultiStd):
+        STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]
+
+        ld_ratio100 = lambda x, y: x / y * 100
+        cursCorp = STOCK_CROP_DATA_CLT.find({})
+
+        dfResult = pd.DataFrame()
+
+        for docStock in cursCorp:  # 종목정보
+            stock_code = docStock["stock_code"]
+            today = docStock["date"]
+            #{"date": {"$lt": today}}
+            cursPrice = stockDB.SP_DB["A"+stock_code].find({}).sort("날짜",pymongo.DESCENDING).limit(meanDays+1)
+            ltPriceInf = list(cursPrice)
+            cur_volumn = ltPriceInf[0]["거래량"]
+            del ltPriceInf[0]
+
+            df = pd.DataFrame(ltPriceInf)
+            volumnMean = df["거래량"].mean() # 20일 평균 거래량
+
+            if volumnMean < 1000:continue
+
+            dictRow = {}  # 데이터프레임의 ROW => 개별 종목 정보
+
+            if (cur_volumn / volumnMean) > volMultiStd:
+                stock_code = docStock['stock_code']
+                cur_price = docStock['cur_price']
+                dictRow['date'] = (docStock['date'])
+                dictRow['stock_code'] = stock_code
+                dictRow['stock_name'] = docStock['stock_name']
+                dictRow['market'] = docStock['market']
+                dictRow['cur_price'] = cur_price
+                dictRow['last_price'] = (docStock["전일종가"])  # 전일가
+                dictRow['srim100'] = 0
+                dictRow['srim100_PR'] = 0
+
+                if 'S-RIM' in docStock:
+                    dictRow['srim100'] = (docStock['S-RIM']['100'])
+                    if dictRow['srim100'] != 0:
+                        dictRow['srim100_PR'] = ld_ratio100(cur_price, dictRow['srim100'])
+
+                dictRow['market_cap'] = round(cur_price * docStock["issued_shares_num"] / 100000000)  # 시가총액 억단위로 환산
+
+                dictRow['cur_volumn'] = np.int64(docStock["거래량"])  # 거래량
+                dictRow['last_volumn'] = np.int64(docStock["전일거래량"])  # 전일 거래량
+
+                dictRow['meanDays'] = meanDays
+                dictRow['volumnMean'] = volumnMean
+                dictRow['volMultiple'] = (cur_volumn / volumnMean)
+
+                dfResult = dfResult.append(dictRow, ignore_index=True)  # 데이터 프레임에 ROW추가
+
+        bulk_query=[]
+        for i, idx in enumerate(dfResult.index):
+            # 데이터 입력
+            item = dfResult.loc[idx].to_dict()
+            item['date'] = int(item['date'])
+            item['cur_price'] = int(item['cur_price'])
+            item['cur_volumn'] = int(item['cur_volumn'])
+            item['last_price'] = int(item['last_price'])
+            item['last_volumn'] = int(item['last_volumn'])
+            item['srim100'] = int(item['srim100'])
+            item['market_cap'] = int(item['market_cap'])
+            item['meanDays'] = int(item['meanDays'])
+
+            bulk_query.append(InsertOne(item))
+
+        stockDB.FS_DB["JUMP_VOLUMN_RATIO"].bulk_write(bulk_query, ordered=False)
+        stockDB.FS_DB["JUMP_VOLUMN_RATIO"].create_index(
+            [("date", pymongo.DESCENDING), ("stock_code", pymongo.ASCENDING)], unique=True)
+        print("JUMP_VOLUMN_RATIO 완료!")
+
+    def __crawlNaverNewPageHtml(self, stock_code, pageNo):
+        URL = f"https://finance.naver.com/item/news_news.nhn?code={stock_code}&page={pageNo}&sm=title_entity_id.basic&clusterId="
+        response = requests.get(URL)
+        soup = BeautifulSoup(response.text, 'lxml')
+        return soup
+
+    # 네이버 종목 뉴스 얻기
+    def crawlingNaverStockNewsInfo(self):
+
+        STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]
+
+        cursCorp = STOCK_CROP_DATA_CLT.find({})
+
+        stock_no = 1 # 종목 no
+        for docStock in cursCorp:  # 종목정보
+
+            stock_code = docStock["stock_code"]
+            stock_name = docStock["stock_name"]
+
+            #if stock_code != '000850': continue
+
+            createNewClt = False  # 컬렉션 신규 생성 여부
+            listCltNames = stockDB.NEWS_DB.list_collection_names()
+            if "A"+stock_code not in listCltNames:
+                createNewClt = True # 컬렉션 신규 생성 여부
+
+            STOCK_NEWS_CLT = stockDB.NEWS_DB["A"+stock_code] #종목 뉴스정보 컬랙션
+
+            if createNewClt == False: # 컬렉션에 데이터가 존재한다면, 마지막 뉴스의 날짜를 구한다.
+                lastDateDoc = STOCK_NEWS_CLT.find_one(sort=[("date", pymongo.DESCENDING)]) #뉴스 마지막 날짜
+                if lastDateDoc == None:  # 컬렉션에 데이터가 없는 경우
+                    lastDate = None
+                else:
+                    lastDate = lastDateDoc["date"]
+
+            #list_insertNew = []  # 추가될 문서(뉴스정보)
+            set_insertNews = set() # 중복뉴스 입력 방지용
+            insertedCnt = 0 #추가된 뉴스 개수
+
+            for pageNo in range(1, 11): # 뉴스 게시판의 기본 페이지 수 만큼만 반복, 1일치 뉴스가 2페이지 이상 발생되지 않는다고 가정함
+                soup = self.__crawlNaverNewPageHtml(stock_code, pageNo)
+
+                newsTitle = soup.select('body > div > table.type5 > tbody td.title > a')    # 뉴스 타이틀
+                newsInfo = soup.select('body > div > table.type5 > tbody td.info')          # 뉴스 출처
+                newsDate = soup.select('body > div > table.type5 > tbody td.date')          # 뉴스 날짜
+
+                list_newsTitle = [x.text.strip() for x in newsTitle]
+                list_newsInfo = [x.text.strip() for x in newsInfo]
+                list_newsDate = [x.text.strip()[:10] for x in newsDate] # 날짜까지만 추출
+                list_newsUrl = [ "https://finance.naver.com"+x["href"].strip() for x in newsTitle] #뉴스 URL
+                
+                if len(list_newsTitle) == 0: break # 크롤링한 데이터가 없을 경우 루프 종료
+
+                bBreakPageLoop = False  # 뉴스 페이지 loop 종료 플래그
+
+                for title, info, date, url in zip(list_newsTitle, list_newsInfo, list_newsDate, list_newsUrl):
+                    doc ={"title":title, "info":info, "date":date, "url":url}
+                    # 컬렉션 신규 생성이 아니고 컬렉션에 데이터가 존재한다면
+                    # => 기존 뉴스의 마지막 날짜 이후 뉴스만 컬렉션에 추가
+                    if createNewClt == False and lastDate != None:
+                        ilastDate = int(lastDate.replace(".", ""))
+                        idate = int(date.replace(".", ""))
+                        if idate < ilastDate: # 해당 뉴스가 저장된 마지막 뉴스의 날짜보다 이전, 더이상 새로운 뉴스는 없음 페이지 루프 종료
+                            bBreakPageLoop = True # 뉴스 페이지 루프 종료
+                            break  # 마지막 저장 뉴스 날짜보다 이전 뉴스는 입력하지 않음
+
+                    # 컬렉션 유니크 키(title+info+date)가 존재함으로
+                    # 종복 뉴스 입력방지를 위해 key값 set으로 뉴스의 중복 체크
+                    duplKey = title+info+date
+                    if duplKey in set_insertNews:
+                        if len(list_newsTitle) == 1: # 페이지 별 뉴스 1개 전시되는 오류 대응 => 페이지 루프 종료
+                            bBreakPageLoop = True  # 뉴스 페이지 루프 종료
+                            break
+                        continue
+                    else: set_insertNews.add(duplKey)
+                    #list_insertNew.append(doc)
+
+                    # 저장된 마지막 뉴스와 같은 날짜 뉴스의 경우 중복 확인을 하고 뉴스를 추가하고
+                    # 이후 날짜 뉴스는 바로 추가 수행
+                    if idate == ilastDate:
+                        edoc = STOCK_NEWS_CLT.find_one({"title":title, "info":info, "date":date})
+                        if edoc == None:
+                            STOCK_NEWS_CLT.insert_one(doc)
+                            insertedCnt += 1
+                    elif idate > ilastDate:
+                        STOCK_NEWS_CLT.insert_one(doc)
+                        insertedCnt += 1
+
+                if bBreakPageLoop:
+                    break
+
+                time.sleep(0.2)
+
+            if createNewClt == True: # 신규 컬렉션의 경우 인덱스 설정
+                STOCK_NEWS_CLT.create_index([("date", pymongo.DESCENDING)],unique=False)
+
+            print(f'{stock_no}) [{stock_code}]{stock_name}, {insertedCnt}개 뉴스 추가')
+            stock_no+=1
+
+    # 뉴스 DB에 중복 입력된 데이터 제거(초기 DB구축 시 오입력 수정용)
+    def removeDuplicateDocInNaverNewDB(self):
+        STOCK_CROP_DATA_CLT = stockDB.FS_DB["STOCK_CROP_DATA_CLT"]
+
+        cursCorp = STOCK_CROP_DATA_CLT.find({})
+
+        no = 1
+        for docStock in cursCorp:  # 종목정보
+            stock_code = docStock["stock_code"]
+            stock_name = docStock["stock_name"]
+
+            STOCK_NEWS_CLT = stockDB.NEWS_DB["A" + stock_code]  # 종목 뉴스정보 컬랙션
+            list_index = STOCK_NEWS_CLT.list_indexes()
+            for index in list_index: # 인덱스 확인 후 삭제
+                #print(type(index))
+                #print(index)
+                if index['name'] == "url_1":
+                    STOCK_NEWS_CLT.drop_index("url_1")
+
+            cursor = STOCK_NEWS_CLT.aggregate([
+                {"$group": {"_id": {'title': '$title', 'info': '$info', 'date': '$date'}, "dups": {"$push": "$_id"},
+                            "count": {"$sum": 1}}},
+                {"$match": {"count": {"$gt": 1}}}
+            ])
+
+            for doc in cursor:
+                list_dups = doc["dups"][1:] # 중복id 리스트의 첫번째 id을 제외한 나머지
+                STOCK_NEWS_CLT.delete_many({"_id": {"$in": list_dups}}) # 중복 id 제거
+
+            # cursor = STOCK_NEWS_CLT.find({})
+            # for doc in cursor:
+            #     url = doc["url"].replace("https://finance.naver.com//", "https://finance.naver.com/")
+            #     STOCK_NEWS_CLT.update_one({"_id":doc["_id"]},{'$set': {'url': url}})
+
+            # STOCK_NEWS_CLT.create_index(
+            #     [("title", pymongo.ASCENDING), ("info", pymongo.ASCENDING), ("date", pymongo.ASCENDING)], unique=True)
+            # STOCK_NEWS_CLT.create_index(
+            #     [("date", pymongo.DESCENDING)], unique=False)
+            print(f'{no}) {stock_code} {stock_name}')
+            no += 1
+
+
+    # 현경컨센서스 리포트정보 얻기
+    def crawlingHKConsensusReportInfo(self, startDate, endDate):
+
+        listCltNames = stockDB.FS_DB.list_collection_names()
+        if "REPORT_CLT" not in listCltNames:
+            createNewClt = True  # 컬렉션 신규 생성 여부
+        else:
+            createNewClt = False  # 컬렉션 신규 생성 여부
+
+        STOCK_REPORT_CLT = stockDB.FS_DB["REPORT_CLT"]  # 종목 리포트 정보 컬랙션
+
+        options = webdriver.ChromeOptions()
+        #options.add_argument('headless')
+        #options.add_argument('disable-gpu')
+        options.add_argument('window-size=1920,1080')
+        driver = webdriver.Chrome(executable_path='./resources/webdriver/chromedriver', options=options)
+        driver.implicitly_wait(2)
+        driver.get(url=f"http://consensus.hankyung.com/apps.analysis/analysis.list?&sdate={startDate}&edate={endDate}&report_type=CO&order_type=&now_page=1")
+
+        lastPageBtn = driver.find_element_by_css_selector('#contents > div.paging > a.btn.last')
+        if lastPageBtn != None:
+            href = lastPageBtn.get_property("href")
+            list_match = re.findall(".*now_page=(\d*)", href)
+            if len(list_match) > 0:
+                totalPage = int(list_match[0])
+            else: return
+        else: return
+
+        # 종목명과 종목코드 추출을 위한 정규식 패턴
+        rPattern = re.compile("(.*)\((.*?)\)")
+
+        for pageNo in range(1, totalPage+1):
+            if pageNo > 1:
+
+                script = f'''
+                    $("<a id='page_locationkjg01' href='/apps.analysis/analysis.list?&sdate={startDate}&edate={endDate}&report_type=CO&order_type=&now_page={pageNo}'>이동</a>").appendTo('body');
+                '''
+                driver.execute_script(script)
+                aTag = driver.find_element_by_id('page_locationkjg01')
+                aTag.click()
+
+                # driver.get(
+                #    url=f"http://consensus.hankyung.com/apps.analysis/analysis.list?&sdate={startDate}&edate={endDate}&report_type=CO&order_type=&now_page={pageNo}")
+                sleep(1)
+
+            # 작성일
+            elements = driver.find_elements_by_css_selector('#contents > div.table_style01 > table > tbody > tr > td.first.txt_number') # 작성일
+            list_writeDate = [x.text for x in elements]
+            # 리포트 제목
+            elements = driver.find_elements_by_css_selector('#contents > div.table_style01 > table > tbody > tr > td.text_l > div > div > strong') # 리포트 제목
+            list_title = [x.get_attribute("innerHTML") for x in elements]
+            #적정가격
+            elements = driver.find_elements_by_css_selector('#contents > div.table_style01 > table > tbody > tr > td.text_r.txt_number') #적정가격
+            list_propPrice = [x.text for x in elements]
+            #투자의견
+            elements = driver.find_elements_by_css_selector('#contents > div.table_style01 > table > tbody > tr > td:nth-child(4)')  #투자의견
+            list_investOpinion = [x.text for x in elements]
+            # 작성자
+            elements = driver.find_elements_by_css_selector('#contents > div.table_style01 > table > tbody > tr > td:nth-child(5)') #작성자
+            list_writer = [x.text for x in elements]
+            # 제공출처
+            elements = driver.find_elements_by_css_selector('#contents > div.table_style01 > table > tbody > tr > td:nth-child(6)') #제공출처
+            list_provider = [x.text for x in elements]
+            # 리포트 URL
+            elements = driver.find_elements_by_css_selector('#contents > div.table_style01 > table > tbody > tr > td:nth-child(9) > div > a') # 리포트 URL
+            list_reportURL = [x.get_property("href") for x in elements]
+
+            print("Page No: ", pageNo)
+            no = 1
+            for date, title, price, opinion, writer, provider, url in zip(list_writeDate, list_title, list_propPrice, list_investOpinion, list_writer, list_provider, list_reportURL):
+
+                print(f"{no}) {date} | {title} | {price} | {opinion} | {writer} | {provider} | {url}")
+                no += 1
+
+                # 보고서 제목에서 종목명, 종목코드 추출
+                match = rPattern.match(title)
+                if match == None:
+                    print("종목명, 종목코드 추출 실패!")
+                    continue
+
+                stock_name, stock_code = match.groups()
+
+                # 종목코드 추출값에 "상장예정" 과 같은 문구가 콤마 구분으로 나타나는 예외 확인 시
+                # 콤마를 기준으로 해당 종목의 종목코드를 추출해준다.
+                idx = stock_code.find(",")
+                if idx != -1:
+                    stock_code = stock_code[0:idx+1]
+
+                # 보고서 정보
+                doc_report={
+                    "date": date.strip(),
+                    "stock_name": stock_name.strip(),
+                    "stock_code": stock_code.strip(),
+                    "title": title.strip(),
+                    "price": int(price.replace(",", "").strip()),
+                    "opinion": opinion.strip(),
+                    "writer": writer.strip(),
+                    "provider": provider.strip(),
+                    "url": url.strip()
+                }
+
+                if createNewClt == True: # 기존 컬렉션이 없다면
+                    STOCK_REPORT_CLT.insert_one(doc_report)
+                else: # 컬렉션이 존재한다면 => 중복 확인 후 입력
+                    existDoc = STOCK_REPORT_CLT.find_one({"url": url})
+                    if existDoc == None:
+                        STOCK_REPORT_CLT.insert_one(doc_report)
+
+        if createNewClt:
+            STOCK_REPORT_CLT.create_index([("date", pymongo.DESCENDING)], unique=False)
+            STOCK_REPORT_CLT.create_index([("url", pymongo.DESCENDING)], unique=True)
+
+        driver.close()
+
 
 
 #================================ DatabaseConstructor =====================================
@@ -1032,9 +1471,15 @@ if __name__ == "__main__":
     #dbConstruct.download_FnGuide_pages(1)  # 제무재표 페이지 다운로드
     #dbConstruct.download_FnGuide_pages(2)  # 제무비율 페이지 다운로드
     #dbConstruct.download_FnGuide_pages(3)  # snapshot 페이지 다운로드
-    #dbConstruct.constructDB_financialStatement_data("E:/STOCK/download/FS/2021-04-03", 2020, 4) # 제무제표 데이터 구축
-    dbConstruct.constructDB_financialStatement_data("E:/STOCK/download/FS/2021-04-22")  # 제무제표 데이터 구축
-    #dbConstruct.constructDB_financialRatio_data("D:/STOCK/download/FR/2021-04-03", 2020, 0, False, True, 'q') # 제무비율 데이터 구축
-    dbConstruct.constructDB_financialRatio_data("E:/STOCK/download/FR/2021-04-22")  # 제무비율 데이터 구축
-    #dbConstruct.constructDB_consensus_data("E:/STOCK/download/CS/2021-04-22")  # 컨센서스 데이터 구축
+    #dbConstruct.constructDB_financialStatement_data("E:/STOCK/download/FS/2021-06-01", 2021, 1, 'q') # 제무제표 데이터 구축
+    #dbConstruct.constructDB_financialStatement_data("E:/STOCK/download/FS/2021-04-22")  # 제무제표 데이터 구축
+    #dbConstruct.constructDB_financialRatio_data("E:/STOCK/download/FR/2021-06-01", 2021, 1, False, True) # 제무비율 데이터 구축
+    #dbConstruct.constructDB_financialRatio_data("E:/STOCK/download/FR/2021-04-22")  # 제무비율 데이터 구축
+    #dbConstruct.constructDB_consensus_data("E:/STOCK/download/CS/2021-06-01")  # 컨센서스 데이터 구축
+    #dbConstruct.writeUnderSrim100InVolumeRTop200()
+    #dbConstruct.writeVolumnJumpStocks(20,20)
 
+    #dbConstruct.crawlingNaverStockNewsInfo() # 네이버 뉴스정보 크롤링 후 저장
+    #dbConstruct.removeDuplicateDocInNaverNewDB() # 뉴스 DB에 중복 입력된 데이터 제거(초기 DB구축 시 오입력 수정용)
+
+    dbConstruct.crawlingHKConsensusReportInfo("2021-05-25", "2021-06-25")

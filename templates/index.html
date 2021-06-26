@@ -17,9 +17,17 @@
     <!--<script src="(( url_for('static', filename='js/import/vue.js') ))"></script>
     <script src="(( url_for('static', filename='js/import/axios.js') ))"></script>-->
 
+<script type="text/javascript">
+      $(document).ready(function(){
+         $("#nav").load("(( url_for('static', filename='html/navigation.html') ))");
+      });
+</script>
+
 </head>
 
+
 <body>
+    <div id="nav"></div>
     <div class="container">
         <h2>Happy Asset Investment 주식 분석 시스템</h2><span>v0.1</span>
         <a href="/stock_list">일반종목검색</a>

@@ -74,8 +74,8 @@ class DataAnalysis:
             if 'treasury_stock' not in doc:
                 continue
 
-            issued_cnt = doc['issued_shares_num']
-            treasury_cnt = doc['treasury_stock']
+            issued_cnt = doc['issued_shares_num'] # 발행 주식 수
+            treasury_cnt = doc['treasury_stock']    # 자기 주식 수
 
             if treasury_cnt == 'N/A': continue
             if 'cns_year' not in doc: continue
@@ -99,23 +99,15 @@ class DataAnalysis:
                     else: roe = 0 # ROE가 산출도지 못한 경우
                 else: roe = 0 # ROE가 산출도지 못한 경우
 
-            else:  # 컨센서스 데이터가 존재하지 않는 종목은 분기 추정 ROE를 사용함
-                dic_cns_quarter = doc['cns_quarter']
-                if 'ROE' in dic_cns_quarter:
-                    if dic_cns_quarter['ROE'] != 'N/A':
-                        roe = dic_cns_quarter['ROE']
-                    else: roe = 0 # 자본 잠식등으로 추정 ROE가 산출되지 못한 경우
-                else: roe = 0 # 자본 잠식등으로 추정 ROE가 산출되지 못한 경우
-                
-                if roe <= 0: # 분기 추정 ROE가 정상 산출되지 못한 경우 년간 추정 ROE 값을 사용
-                    dic_cns_year = doc['cns_year']
-                    if 'ROE' in dic_cns_year:
-                        if dic_cns_year['ROE'] != 'N/A':
-                            roe = dic_cns_year['ROE']
-                        else:
-                            roe = 0  # ROE가 산출도지 못한 경우
+            else:  # 컨센서스 데이터가 존재하지 않는 종목은 년간 추정 ROE를 사용함
+                dic_cns_year = doc['cns_year']
+                if 'ROE' in dic_cns_year:
+                    if dic_cns_year['ROE'] != 'N/A':
+                        roe = dic_cns_year['ROE']
                     else:
                         roe = 0  # ROE가 산출도지 못한 경우
+                else:
+                    roe = 0  # ROE가 산출도지 못한 경우
                     
 
             shareCnt = issued_cnt - treasury_cnt
@@ -197,7 +189,13 @@ class DataAnalysis:
                 listSaleVal.append(dic_sales["sales"])
 
             if len(listSaleInfo) == 0: continue
-
+            '''
+            slope: 회귀선의 기울기입니다.
+            intercept: 회귀선의 절편입니다.
+            rvalue: 상관 계수.
+            pvalue: 귀무 가설이 있는 가설 검정의 양측 p-값 기울기가 0인지 여부, t-분포와 함께 Wald Test를 사용합니다. 검정 통계량
+            stderr: 추정된 그라데이션의 표준 오차입니다.        
+            '''
             slope, intercept, r_value, p_value, stderr = stats.linregress(range(len(listSaleVal)), listSaleVal)
             dic_sales_linregress = {
                 'slope': slope/intercept,
@@ -206,18 +204,6 @@ class DataAnalysis:
                 'p_value': p_value,
                 'stderr': stderr/intercept
             }
-            '''
-            slope
-            회귀선의 기울기입니다.
-            intercept
-            회귀선의 절편입니다.
-            rvalue
-            상관 계수.
-            pvalue
-            귀무 가설이 있는 가설 검정의 양측 p-값 기울기가 0인지 여부, t-분포와 함께 Wald Test를 사용합니다. 검정 통계량
-            stderr
-            추정된 그라데이션의 표준 오차입니다.        
-            '''
 
             div_key =  'year_sales' if bYear else 'quarter_sales' # 분기와 년도 데이터의 키값 지정
             # salesInfo > year/quarter > sale, linRegress 구조로 정보 업데이트
@@ -509,9 +495,6 @@ class DataAnalysis:
                     no += 1
                     break
 
-
-
-
         dfResult = pd.DataFrame()
 
         ltStockCode =[]
@@ -734,7 +717,7 @@ dataAnalysis = DataAnalysis()
 
 if __name__ == "__main__":
     a = 0
-    #dataAnalysis.updateAll_S_RIM(2020, 4) #S-RIM 가격 정보 Update
+    dataAnalysis.updateAll_S_RIM(2021, 1) #S-RIM 가격 정보 Update
     #dataAnalysis.updateStockSalesInfo() # 종목 매출액(시계열) 정보 업데이트
     #dataAnalysis.getSaleGrowthStock()
     #dataAnalysis.concensusTop30SalesGrowthRateStocks(2020, "C:\\STOCK_DATA")
@@ -744,7 +727,7 @@ if __name__ == "__main__":
     #     print(i+1,"rank : ",v_r, "%")
 
 
-    dataAnalysis.getVolumnRateYield(20, 20210101, 20210201, 60, 20, 100)
+    #dataAnalysis.getVolumnRateYield(20, 20210101, 20210201, 60, 20, 100)
     #dataAnalysis.getVolumnRateYield(20, 20201201, 20210101, 50, 20, 100)
     #dataAnalysis.getVolumnRateYield(20, 20201101, 20201201, 60, 20, 100)
 

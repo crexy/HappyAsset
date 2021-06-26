@@ -23,6 +23,7 @@ class StockDB:
         mongoClient = MongoClient('mongodb://{0}:{1}@127.0.0.1'.format(id, pwd))
         self.FS_DB = mongoClient.Stock_Investment  # 재무정보 DB
         self.SP_DB = mongoClient.Stock_Price  # 종목시세정보 DB
+        self.NEWS_DB = mongoClient.Stock_News  # 종목뉴스정보 DB
 
 
 stockDB = StockDB()

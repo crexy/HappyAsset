@@ -3,17 +3,19 @@ let infModifyMode = false; // 종목정보 수정모드
 let selectedRowKey = -1    // 현재 선택된 그리드 rowKey
 
 // 종목S-RIM정보 찾기
-function searchStockSRimInfo(){
-
-
+function searchStocks(){
     var data={
-        stock_keyword:$('#search_box').val(),
+        stock_keyword:$('#search_stock').val().trim(),
+        holdingCompany_keyword:$('#search_holdingCompany').val().trim(),
+        customer_keyword:$('#search_customer').val().trim(),
+        product_keyword:$('#search_product').val().trim(),
+        business_keyword:$('#search_business').val().trim(),
+        subsidiaryCompany_keyword:$('#search_subsidiaryCompany').val().trim(),
         //param:Math.random()
     };
 
     stockInfo_gird.readData(1, data, true);
     //stockInfo_gird.readData(1, data, true);
-
     //ajax("/stock_srim", 'POST', JSON.stringify(data), printStockValueInfo);
 }
 
@@ -21,10 +23,45 @@ function searchStockSRimInfo(){
 function dispStockInfo(rowKey){
     if(rowKey == -1) return;
     row = stockInfo_gird.getRow(rowKey)
+    $('#stock_title').text("종목 정보("+row.stock_name+")")
     $('#holdingCompany').val(row.holdingCompany);
     $('#customer').val(row.customer);
     $('#product').val(row.product);
     $('#business').val(row.business);
+    $('#subsidiaryCompany').val(row.subsidiaryCompany);
+}
+
+function priceUpDownColor(value){
+    if(value > 50){
+        return '#FF0000';
+    }else if(value > 30){
+
+    }else if(value > 10){
+
+    }else if(value > 0){
+
+    }else if(value < 50){
+
+    }else if(value < 30){
+
+    }else if(value < 10){
+
+    }
+
+    return '#000000';
+}
+
+// 가격 비율 컬러 포멧터
+function priceRatioColorFmt({ row, column, value }) {
+    value = decimal2p(value)
+    var color = "red";
+    if(value == 0)
+        color = "black";
+    else if(value < 0)
+        color = "blue"
+    value = decimal2p(value);
+    var rsltFmt = "<p style='color:"+color+"'>"+value+"%</p>"
+    return rsltFmt;
 }
 
 // 그리드 생성
@@ -88,10 +125,10 @@ function initGrid(){
       rowHeight:40,
       minRowHeight:20,
       minColumnWidth:150,
-      pageOptions: {
-        useClient: true,
-        perPage: 20
-      },
+//      pageOptions: {
+//        useClient: true,
+//        perPage: 20
+//      },
       columnOptions: { // 고정 컬럼 설정
         frozenCount: 3, // 3개의 컬럼을 고정하고
         frozenBorderWidth: 2 // 고정 컬럼의 경계선 너비를 2px로 한다.
@@ -105,11 +142,7 @@ function initGrid(){
           align: 'center',
           width:100,
           resizable: true,
-          filter: {
-            type: 'select',
-            showApplyBtn: true,
-            showClearBtn: true
-          }
+          filter: 'select'
         },
         {
           header: '종목명',
@@ -119,6 +152,7 @@ function initGrid(){
           resizable: true,
           filter: {
             type: 'text',
+            operator: 'OR',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -131,6 +165,21 @@ function initGrid(){
           resizable: true,
           filter: {
             type: 'text',
+            operator: 'OR',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
+        {
+          header: '관련뉴스',
+          name: 'news_count',
+          align: 'center',
+          width:100,
+          resizable: true,
+          sortable: true,
+          filter: {
+            type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -156,27 +205,93 @@ function initGrid(){
           }
         },
         {
-          header: '(전일대비 %)',
+          header: '전일대비 %',
           name: 'price_DR',
           align: 'center',
-          width:150,
+          width:120,
           sortable: true,
           resizable: true,
           align: 'center',
-          /*formatter: function({ row, column, value }) {
-            value = decimal2p(value)
-            var color = "red";
-            if(value == 0)
-                color = "black";
-            else if(value < 0)
-                color = "blue"
-            value = decimal2p(value);
-            var rsltFmt = "<p style='color:"+color+"'>("+value+"%)</p>"
-            return rsltFmt;
-          },*/
-          formatter:function({ row, column, value }){ return decimal2p(value); },
+          formatter: priceRatioColorFmt
+        },
+        {
+          header: '5일전대비%',
+          name: 'prev_5dayPrice',
+          align: 'right',
+          width:120,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: priceRatioColorFmt
+        },
+        {
+          header: '한달전대비%',
+          name: 'prev_20dayPrice',
+          align: 'right',
+          width:120,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: priceRatioColorFmt
+        },
+        {
+          header: '분기전대비%',
+          name: 'prev_60dayPrice',
+          align: 'right',
+          width:120,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: priceRatioColorFmt
+        },
+        {
+          header: '반기전대비%',
+          name: 'prev_120dayPrice',
+          align: 'right',
+          width:120,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: priceRatioColorFmt
+        },
+        {
+          header: '일년전대비%',
+          name: 'prev_240dayPrice',
+          align: 'right',
+          width:120,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: priceRatioColorFmt
+        },
+        {
+          header: '5일가격추이',
+          name: 'slope_5dayPrice',
+          align: 'right',
+          width:120,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: function({ row, column, value }) {return decimal2p(value)},
           filter: {
             type: 'number',
+            operator:'AND',
+            showApplyBtn: true,
+            showClearBtn: true
+          }
+        },
+        {
+          header: '20일가격추이',
+          name: 'slope_20dayPrice',
+          align: 'right',
+          width:130,
+          resizable: true,
+          sortable: true,
+          align: 'center',
+          formatter: function({ row, column, value }) {return decimal2p(value)},
+          filter: {
+            type: 'number',
+            operator:'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -203,6 +318,7 @@ function initGrid(){
           formatter:function({ row, column, value }){ return decimal2p(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -229,6 +345,7 @@ function initGrid(){
           formatter:function({ row, column, value }){ return decimal2p(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -255,6 +372,7 @@ function initGrid(){
           formatter:function({ row, column, value }){ return decimal2p(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -300,6 +418,7 @@ function initGrid(){
           formatter:function({ row, column, value }){ return decimal2p(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -314,6 +433,7 @@ function initGrid(){
           formatter:function({ row, column, value }){ return decimal2p(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -329,6 +449,7 @@ function initGrid(){
           //formatter:function({ row, column, value }){ return num3Comma(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -344,6 +465,7 @@ function initGrid(){
           //formatter:function({ row, column, value }){ return num3Comma(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -359,6 +481,7 @@ function initGrid(){
           //formatter:function({ row, column, value }){ return num3Comma(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -373,6 +496,7 @@ function initGrid(){
           formatter:function({ row, column, value }){ return decimal2p(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -387,6 +511,7 @@ function initGrid(){
           formatter:function({ row, column, value }){ return decimal2p(value); },
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -401,6 +526,7 @@ function initGrid(){
           //formatter:function({ row, column, value }){ return num3Comma(value);},
           filter: {
             type: 'number',
+            operator: 'AND',
             showApplyBtn: true,
             showClearBtn: true
           }
@@ -410,16 +536,53 @@ function initGrid(){
 
     // 그리드 셀 포커스 변경 이벤트
     stockInfo_gird.on('focusChange', function(e){
-
         if(infModifyMode) return;   // 데이터 수정 모드에서는 기능 작동하지 않음
-
-        console.log(e.rowKey);
-
+        //console.log(e.rowKey);
         // 종목정보 전시
         dispStockInfo(e.rowKey);
-
         selectedRowKey = e.rowKey;
 
+        // 선택 그리드의 행 배경색을 변경
+        if(e.rowKey != e.prevRowKey){
+            e.instance.addRowClassName(e.rowKey, 'sell');
+            e.instance.removeRowClassName(e.prevRowKey, 'sell');
+        }
+    });
+
+    // 그리드 더블클릭 이벤트
+    stockInfo_gird.on('dblclick', function(e){
+        if(infModifyMode) return;   // 데이터 수정 모드에서는 기능 작동하지 않음
+        if(e.columnName == "stock_code"){
+            // FnGuide 창 열기
+            var row = e.instance.getRow(e.rowKey);
+            var url = "http://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A"+row.stock_code+"&cID=&MenuYn=Y&ReportGB=&NewMenuID=101&stkGb=701";
+            window.open(url,"","width=800,height=1000,left=100");
+        }
+
+        if(e.columnName == "cur_price"){ // 현재가 컬럼 더블클릭
+            // 네이버 주식차트 창 열기
+            var row = e.instance.getRow(e.rowKey);
+            var url = "https://finance.naver.com/item/fchart.nhn?code="+row.stock_code;
+            window.open(url,"","width=800,height=1000,left=100");
+        }
+
+        if(e.columnName == "news_count"){ // 관련뉴스 컬럼 더블클릭
+            // 네이버 뉴스스 창 열기
+           var row = e.instance.getRow(e.rowKey);
+            var url = "https://finance.naver.com/item/news.nhn?code="+row.stock_code;
+            window.open(url,"","width=800,height=1000,left=100");
+        }
+
+    });
+
+    // 그리드 업데이트 시
+    stockInfo_gird.on('onGridUpdated', function(e){
+        if(infModifyMode) return;   // 데이터 수정 모드에서는 기능 작동하지 않음
+        // 그리드 업데이트 시 첫번째 row의 값을 전시
+        var rowKey = e.instance.store.data.filteredRawData[0].rowKey;
+        // 종목정보 전시
+        dispStockInfo(rowKey);
+        selectedRowKey = rowKey;
     });
 }
 
@@ -429,6 +592,8 @@ $(function(){
 
     // 그리드 생성
     initGrid();
+
+
 
     stockInfo_gird.on('beforeRequest', function(ev) {
       // 요청을 보내기 전
@@ -451,26 +616,36 @@ $(function(){
     // 찾기 버튼 이벤트
     $('#btn_search').on('click', function(e){
         e.preventDefault();
-        searchStockSRimInfo();
+        searchStocks();
+    });
+    // 찾기 취소 버튼 이벤트
+    $('#btn_search_cancel').on('click', function(e){
+        e.preventDefault();
+        $('#search_stock, #search_holdingCompany, #search_customer,'+
+    '#search_product, #search_business, #search_subsidiaryCompany').val('')
+        searchStocks();
     });
 
-    $('#search_box').on('keydown', function(e){
+    $('#search_stock, #search_holdingCompany, #search_customer,'+
+    '#search_product, #search_business, #search_subsidiaryCompany').on('keydown', function(e){
         if(e.keyCode == 13)
-            searchStockSRimInfo();
+            searchStocks();
     });
 
+    // UI컴포넌트 상태 설정
     function setInputComponentState(modifyMode){
         $('#holdingCompany').prop('readonly', !modifyMode);
         $('#customer').prop('readonly', !modifyMode);
         $('#product').prop('readonly', !modifyMode);
         $('#business').prop('readonly', !modifyMode);
-        if(modifyMode)
-            stockInfo_gird.disable();
-        else
-            stockInfo_gird.enable();
+        $('#subsidiaryCompany').prop('readonly', !modifyMode);
+        $('#btn_search').attr('disabled', modifyMode);  // 검색 버튼
+        $('#btn_search_cancel').attr('disabled', modifyMode); // 검색취소 버튼
+//        if(modifyMode)
+//            stockInfo_gird.disable();
+//        else
+//            stockInfo_gird.enable();
     }
-
-
 
     // 종목정보 작성 버튼
     $('#btn_write_stock_info').on('click', function(e){
@@ -488,17 +663,19 @@ $(function(){
 
             // 작성정보 서버로 전송
             var stock_code = stockInfo_gird.getValue(selectedRowKey, "stock_code");
-            var holdingCompany = $('#holdingCompany').val();
-            var customer = $('#customer').val();
-            var product = $('#product').val();
-            var business = $('#business').val();
+            var holdingCompany = $('#holdingCompany').val().trim();
+            var customer = $('#customer').val().trim();
+            var product = $('#product').val().trim();
+            var business = $('#business').val().trim();
+            var subsidiaryCompany = $('#subsidiaryCompany').val().trim();
 
             var data = {
                 "stock_code":stock_code,
                 "holdingCompany":holdingCompany,
                 "customer":customer,
                 "product":product,
-                "business":business
+                "business":business,
+                "subsidiaryCompany":subsidiaryCompany
             };
 
             ajax("/stock_list/modify", "POST", JSON.stringify(data), function(rslt){
@@ -511,6 +688,7 @@ $(function(){
                 stockInfo_gird.setValue(selectedRowKey, "customer", rslt.customer);
                 stockInfo_gird.setValue(selectedRowKey, "product", rslt.product);
                 stockInfo_gird.setValue(selectedRowKey, "business", rslt.business);
+                stockInfo_gird.setValue(selectedRowKey, "subsidiaryCompany", rslt.subsidiaryCompany); // 종속회사
             });
 
         }
@@ -529,6 +707,10 @@ $(function(){
         $('#btn_write_stock_info').text("종목 정보 작성");
         setInputComponentState(false); // 작성컨트롤 비활성화
         infModifyMode = false;
+    });
+
+    $(document).ready(function(){
+        $("#nav").load("static/html/navigation.html");
     });
 });
 

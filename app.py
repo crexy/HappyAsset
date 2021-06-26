@@ -122,28 +122,10 @@ def stock_list_search():
     #searchOpt = request.form.get("data") # request.form으로 POST 데이터 수신
     #page = request.form.get("page")  # request.form으로 POST 데이터 수신
 
-    stock_keyword = None
-    business_Keyword = None
-    customer_Keyword = None
-    product_Keyword = None
     page = 1
     perPage = 10
 
-    if searchOpt != None:
-        if "page" in searchOpt:
-            page = searchOpt["page"]
-        if "perPage" in searchOpt:
-            perPage = searchOpt["perPage"]
-        if "stock_keyword" in searchOpt:
-            stock_keyword = searchOpt["stock_keyword"]
-        if "business_Keyword" in searchOpt:
-            business_Keyword = searchOpt["business_Keyword"]
-        if "customer_Keyword" in searchOpt:
-            customer_Keyword = searchOpt["customer_Keyword"]
-        if "product_Keyword" in searchOpt:
-            product_Keyword = searchOpt["product_Keyword"]
-
-    list, totCnt = haService.searchStockInfoList(stock_keyword, business_Keyword, customer_Keyword, product_Keyword)
+    list, totCnt = haService.searchStockInfoList(searchOpt)
 
     return make_tui_ds_fmt(list, page, totCnt)
 
